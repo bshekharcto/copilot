@@ -142,7 +142,8 @@ export function useChat() {
     isLoading,
     sendMessage,
     selectSession,
-    startNewChat
+    startNewChat,
+    loadSessions
   }
 }
 

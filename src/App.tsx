@@ -15,7 +15,8 @@ function App() {
     isLoading,
     sendMessage,
     selectSession,
-    startNewChat
+    startNewChat,
+    loadSessions
   } = useChat()
 
   const scrollToBottom = () => {
@@ -47,6 +48,8 @@ function App() {
         currentSession={currentSession}
         onSessionSelect={selectSession}
         onNewChat={handleNewChat}
+        sessions={sessions}
+        onSessionsUpdate={loadSessions}
       />
 
       <div className="flex-1 flex flex-col">
