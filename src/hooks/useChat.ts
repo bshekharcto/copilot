@@ -217,7 +217,30 @@ Would you like detailed analysis for specific equipment or time periods?`
       return { equipment, availability: equipAvailability, downtime: equipDowntime }
     }).sort((a, b) => b.availability - a.availability)
 
+    const chartData = {
+      type: 'bar' as const,
+      title: 'Equipment Availability Analysis',
+      labels: equipmentAvailability.map(item => item.equipment),
+      datasets: [{
+        label: 'Availability %',
+        data: equipmentAvailability.map(item => Number(item.availability.toFixed(1))),
+        backgroundColor: equipmentAvailability.map(item =>
+          item.availability >= 90 ? 'rgba(34, 197, 94, 0.8)' :
+          item.availability >= 80 ? 'rgba(251, 191, 36, 0.8)' :
+          'rgba(239, 68, 68, 0.8)'
+        ),
+        borderColor: equipmentAvailability.map(item =>
+          item.availability >= 90 ? 'rgba(34, 197, 94, 1)' :
+          item.availability >= 80 ? 'rgba(251, 191, 36, 1)' :
+          'rgba(239, 68, 68, 1)'
+        ),
+        borderWidth: 1
+      }]
+    }
+
     return `**Availability Analysis from Real Data:**
+
+\`\`\`chart:${JSON.stringify(chartData)}\`\`\`
 
 **Equipment Availability Rankings:**
 ${equipmentAvailability.map((item, index) =>
@@ -250,7 +273,22 @@ Need specific recommendations for any equipment?`
       .sort(([,a], [,b]) => b - a)
       .slice(0, 5)
 
+    const paretoChartData = {
+      type: 'pareto' as const,
+      title: 'Downtime Causes - Pareto Analysis',
+      labels: sortedDowntime.map(([reason]) => reason),
+      datasets: [{
+        label: 'Downtime (minutes)',
+        data: sortedDowntime.map(([, minutes]) => minutes),
+        backgroundColor: 'rgba(59, 130, 246, 0.8)',
+        borderColor: 'rgba(59, 130, 246, 1)',
+        borderWidth: 1
+      }]
+    }
+
     return `**Downtime Analysis from Actual Data:**
+
+\`\`\`chart:${JSON.stringify(paretoChartData)}\`\`\`
 
 **Total Downtime Breakdown:**
 ${sortedDowntime.map(([reason, minutes]) =>
