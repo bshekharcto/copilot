@@ -47,18 +47,38 @@ function App() {
         <div className="flex-1 overflow-y-auto">
           {messages.length === 0 ? (
             <div className="h-full flex items-center justify-center p-8">
-              <div className="text-center max-w-md">
+              <div className="text-center max-w-2xl">
                 <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <span className="text-2xl">🤖</span>
                 </div>
                 <h2 className="text-xl font-semibold text-gray-900 mb-2">
                   OEE Assistant Ready
                 </h2>
-                <p className="text-gray-600 mb-6">
-                  I can help you analyze equipment performance, identify trends, and provide optimization recommendations.
+                <p className="text-gray-600 mb-8">
+                  I can help you analyze equipment performance, identify trends, and provide optimization recommendations based on your actual equipment data.
                 </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+                  {[
+                    "Show me availability analysis for all equipment",
+                    "What are the main downtime causes?",
+                    "Which equipment needs immediate attention?",
+                    "Generate an OEE summary report"
+                  ].map((prompt, index) => (
+                    <button
+                      key={index}
+                      onClick={() => handleSendMessage(prompt)}
+                      className="p-3 text-left border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors group"
+                    >
+                      <div className="text-sm font-medium text-gray-900 group-hover:text-blue-900">
+                        {prompt}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
                 <div className="text-sm text-gray-500">
-                  Ask me about availability analysis, downtime causes, performance metrics, or any equipment insights.
+                  Or ask me anything about your equipment performance, alerts, or operational insights.
                 </div>
               </div>
             </div>

@@ -8,12 +8,14 @@ interface ChatInputProps {
 }
 
 const SUGGESTED_PROMPTS = [
-  "What's the current OEE performance across all equipment?",
-  "Show me the top 3 underperforming machines this week",
-  "How can I improve availability on CNC Machine 01?",
-  "Explain the difference between availability, performance, and quality metrics",
-  "What are the industry benchmarks for OEE in manufacturing?",
-  "Generate a report on yesterday's production efficiency"
+  "Show me availability analysis for all equipment",
+  "What are the main downtime causes across my machines?",
+  "Which equipment needs immediate attention?",
+  "Analyze recent alerts and critical issues",
+  "Show me performance trends for Machine A vs Machine B",
+  "What caused the longest downtime incident?",
+  "Generate an OEE summary report",
+  "How can I reduce maintenance-related downtime?"
 ]
 
 export function ChatInput({ onSendMessage, isLoading, onSuggestedPrompt }: ChatInputProps) {
