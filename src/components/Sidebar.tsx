@@ -103,13 +103,19 @@ export function Sidebar({ currentSession, onSessionSelect, onNewChat, sessions, 
     <div className="w-64 bg-gray-900 text-white flex flex-col h-full">
       <div className="p-4 border-b border-gray-700">
         <div className="flex items-center gap-2 mb-4">
-          <BarChart3 className="w-6 h-6 text-blue-400" />
+          <BarChart3 className="w-6 h-6" style={{ color: '#1955AE' }} />
           <span className="font-semibold">OEE Copilot</span>
         </div>
 
         <button
           onClick={onNewChat}
-          className="w-full flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors"
+          style={{
+            backgroundColor: '#1955AE',
+            color: 'white'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#164A99'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#1955AE'}
         >
           <Plus className="w-4 h-4" />
           New Chat

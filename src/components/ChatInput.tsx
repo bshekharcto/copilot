@@ -39,17 +39,20 @@ export function ChatInput({ onSendMessage, isLoading, onSuggestedPrompt }: ChatI
   return (
     <div className="border-t bg-white p-4">
       {showSuggestions && (
-        <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+        <div className="mb-4 p-3 rounded-lg" style={{ backgroundColor: '#E8F2FF' }}>
           <div className="flex items-center gap-2 mb-2">
-            <Lightbulb className="w-4 h-4 text-blue-600" />
-            <span className="text-sm font-medium text-blue-900">Suggested prompts:</span>
+            <Lightbulb className="w-4 h-4" style={{ color: '#1955AE' }} />
+            <span className="text-sm font-medium" style={{ color: '#1955AE' }}>Suggested prompts:</span>
           </div>
           <div className="space-y-1">
             {SUGGESTED_PROMPTS.map((prompt, index) => (
               <button
                 key={index}
                 onClick={() => handleSuggestedPrompt(prompt)}
-                className="block w-full text-left px-2 py-1 text-sm text-blue-800 hover:bg-blue-100 rounded transition-colors"
+                className="block w-full text-left px-2 py-1 text-sm rounded transition-colors"
+                style={{ color: '#164A99' }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#D1E7FF'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
               >
                 {prompt}
               </button>
@@ -64,9 +67,13 @@ export function ChatInput({ onSendMessage, isLoading, onSuggestedPrompt }: ChatI
           onClick={() => setShowSuggestions(!showSuggestions)}
           className={`p-2 rounded-lg transition-colors ${
             showSuggestions
-              ? 'bg-blue-100 text-blue-600'
+              ? 'hover:bg-gray-100 text-gray-600'
               : 'hover:bg-gray-100 text-gray-600'
           }`}
+          style={{
+            backgroundColor: showSuggestions ? '#E8F2FF' : 'transparent',
+            color: showSuggestions ? '#1955AE' : '#6B7280'
+          }}
           title="Show suggested prompts"
         >
           <Lightbulb className="w-5 h-5" />
@@ -78,7 +85,12 @@ export function ChatInput({ onSendMessage, isLoading, onSuggestedPrompt }: ChatI
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Ask about OEE metrics, equipment performance, or get insights..."
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:border-transparent outline-none"
+            style={{
+              focusRingColor: '#1955AE'
+            }}
+            onFocus={(e) => e.target.style.borderColor = '#1955AE'}
+            onBlur={(e) => e.target.style.borderColor = '#D1D5DB'}
             disabled={isLoading}
           />
         </div>
@@ -86,7 +98,12 @@ export function ChatInput({ onSendMessage, isLoading, onSuggestedPrompt }: ChatI
         <button
           type="submit"
           disabled={!message.trim() || isLoading}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+          className="px-4 py-2 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+          style={{
+            backgroundColor: '#1955AE'
+          }}
+          onMouseEnter={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#164A99')}
+          onMouseLeave={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#1955AE')}
         >
           <Send className="w-4 h-4" />
           Send

@@ -48,7 +48,7 @@ function App() {
           {messages.length === 0 ? (
             <div className="h-full flex items-center justify-center p-8">
               <div className="text-center max-w-2xl">
-                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: '#E8F2FF' }}>
                   <span className="text-2xl">🤖</span>
                 </div>
                 <h2 className="text-xl font-semibold text-gray-900 mb-2">
@@ -68,7 +68,15 @@ function App() {
                     <button
                       key={index}
                       onClick={() => handleSendMessage(prompt)}
-                      className="p-3 text-left border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors group"
+                      className="p-3 text-left border border-gray-200 rounded-lg transition-colors group"
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#1955AE'
+                        e.currentTarget.style.backgroundColor = '#E8F2FF'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = '#E5E7EB'
+                        e.currentTarget.style.backgroundColor = 'transparent'
+                      }}
                     >
                       <div className="text-sm font-medium text-gray-900 group-hover:text-blue-900">
                         {prompt}
