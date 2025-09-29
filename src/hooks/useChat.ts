@@ -94,8 +94,8 @@ export function useChat() {
 
       setMessages(prev => [...prev, userMsgData])
 
-      // Simulate AI response
-      const aiResponse = generateAIResponse(content)
+      // Generate AI response using real data
+      const aiResponse = await generateAIResponse(content)
 
       const assistantMessage = {
         session_id: currentSession!.id,
@@ -146,175 +146,247 @@ export function useChat() {
   }
 }
 
-// Simulate AI responses for demo purposes
-function generateAIResponse(userMessage: string): string {
+// Generate AI responses using real equipment data
+async function generateAIResponse(userMessage: string): Promise<string> {
   const message = userMessage.toLowerCase()
 
+  // Fetch real equipment status data
+  const { data: statusLogs, error } = await supabase
+    .from('equipment_status_logs')
+    .select('*')
+    .order('date', { ascending: false })
+    .order('start_time', { ascending: false })
+
+  if (error) {
+    console.error('Error fetching equipment data:', error)
+    return "I'm having trouble accessing the equipment data right now. Please try again in a moment."
+  }
+
+  const equipmentData = statusLogs || []
+  const uniqueEquipment = [...new Set(equipmentData.map(log => log.equipment_name))]
+  const totalLogs = equipmentData.length
+  const downLogs = equipmentData.filter(log => log.status.toLowerCase() === 'down')
+  const runningLogs = equipmentData.filter(log => log.status.toLowerCase() === 'running')
+
+  // Calculate basic metrics
+  const totalDowntime = downLogs.reduce((sum, log) => sum + (log.duration_minutes || 0), 0)
+  const totalRuntime = runningLogs.reduce((sum, log) => sum + (log.duration_minutes || 0), 0)
+  const availability = totalRuntime / (totalRuntime + totalDowntime) * 100
+
   if (message.includes('oee') || message.includes('overall equipment effectiveness')) {
-    return `Based on your current equipment data, I can see several key insights:
+    const recentAlerts = [...new Set(downLogs.filter(log => log.alert).map(log => log.alert))]
 
-**Current OEE Performance:**
-• Average OEE across all equipment: ~87.2%
-• 2 machines performing above 90% (excellent)
-• 1 machine needs attention with 78% OEE
+    return `Based on your actual equipment data analysis:
 
-**Key Recommendations:**
-1. **Availability**: Focus on reducing unplanned downtime
-2. **Performance**: Optimize cycle times on underperforming equipment
-3. **Quality**: Maintain current quality standards while improving speed
+**Current OEE Performance Overview:**
+• **Equipment tracked**: ${uniqueEquipment.length} machines (${uniqueEquipment.join(', ')})
+• **Total operational records**: ${totalLogs} status logs
+• **Calculated availability**: ${availability.toFixed(1)}%
 
-**Specific Actions:**
-• Schedule preventive maintenance for CNC Machine 01
-• Review changeover procedures on Assembly Line 02
-• Consider operator training for packaging efficiency
+**Recent Equipment Activity:**
+• **Running periods**: ${runningLogs.length} sessions (${totalRuntime} minutes total)
+• **Downtime events**: ${downLogs.length} incidents (${totalDowntime} minutes total)
 
-Would you like me to dive deeper into any specific aspect or equipment?`
+**Key Issues Identified:**
+${recentAlerts.length > 0 ? recentAlerts.map(alert => `• ${alert}`).join('\n') : '• No critical alerts in recent data'}
+
+**Most Common Downtime Reasons:**
+${[...new Set(downLogs.filter(log => log.reason).map(log => log.reason))]
+  .slice(0, 3)
+  .map(reason => `• ${reason}`)
+  .join('\n')}
+
+**Recommendations:**
+1. **Focus on availability improvement** - Current ${availability.toFixed(1)}% has room for optimization
+2. **Address recurring issues** - Review maintenance schedules for frequent problems
+3. **Monitor alert patterns** - Implement proactive maintenance based on alert history
+
+Would you like detailed analysis for specific equipment or time periods?`
   }
 
   if (message.includes('availability')) {
-    return `**Availability Analysis:**
+    const equipmentAvailability = uniqueEquipment.map(equipment => {
+      const equipLogs = equipmentData.filter(log => log.equipment_name === equipment)
+      const equipDowntime = equipLogs.filter(log => log.status.toLowerCase() === 'down')
+        .reduce((sum, log) => sum + (log.duration_minutes || 0), 0)
+      const equipRuntime = equipLogs.filter(log => log.status.toLowerCase() === 'running')
+        .reduce((sum, log) => sum + (log.duration_minutes || 0), 0)
+      const equipAvailability = equipRuntime / (equipRuntime + equipDowntime) * 100
 
-Availability measures the percentage of time equipment is operational and ready to produce.
+      return { equipment, availability: equipAvailability, downtime: equipDowntime }
+    }).sort((a, b) => b.availability - a.availability)
 
-**Current Status:**
-• Best performer: Quality Scanner 04 (96.8%)
-• Needs improvement: CNC Machine 01 (83.2%)
+    return `**Availability Analysis from Real Data:**
 
-**Common availability issues:**
-• Unplanned breakdowns
-• Setup and changeover times
-• Equipment failures
-• Material shortages
+**Equipment Availability Rankings:**
+${equipmentAvailability.map((item, index) =>
+  `${index + 1}. **${item.equipment}**: ${item.availability.toFixed(1)}% (${item.downtime} min downtime)`
+).join('\n')}
 
-**Improvement strategies:**
-1. Implement predictive maintenance
-2. Optimize changeover procedures
-3. Ensure proper operator training
-4. Maintain adequate spare parts inventory
+**Downtime Analysis:**
+• **Total downtime events**: ${downLogs.length}
+• **Average downtime per incident**: ${totalDowntime > 0 ? (totalDowntime / downLogs.length).toFixed(1) : 0} minutes
+• **Most frequent causes**: ${[...new Set(downLogs.map(log => log.reason))].slice(0, 3).join(', ')}
 
-Would you like specific recommendations for any equipment?`
+**Key Insights:**
+• ${equipmentAvailability[0]?.equipment} is your most reliable equipment at ${equipmentAvailability[0]?.availability.toFixed(1)}%
+• ${equipmentAvailability[equipmentAvailability.length - 1]?.equipment} needs attention with ${equipmentAvailability[equipmentAvailability.length - 1]?.availability.toFixed(1)}% availability
+
+**Improvement Opportunities:**
+${downLogs.filter(log => log.issue).slice(0, 3).map(log => `• Address ${log.issue} on ${log.equipment_name}`).join('\n')}
+
+Need specific recommendations for any equipment?`
   }
 
-  if (message.includes('performance')) {
-    return `**Performance Analysis:**
+  if (message.includes('downtime') || message.includes('issues')) {
+    const downtimeByReason = downLogs.reduce((acc, log) => {
+      const reason = log.reason || 'Unknown'
+      acc[reason] = (acc[reason] || 0) + (log.duration_minutes || 0)
+      return acc
+    }, {} as Record<string, number>)
 
-Performance measures how fast equipment operates compared to its designed speed.
+    const sortedDowntime = Object.entries(downtimeByReason)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 5)
 
-**Current Metrics:**
-• Average performance rate: 94.7%
-• Top performer: Assembly Line 02 (97.1%)
-• Improvement opportunity: Packaging Unit 03 (91.8%)
+    return `**Downtime Analysis from Actual Data:**
 
-**Performance optimization tips:**
-1. Review and optimize cycle times
-2. Eliminate micro-stops and minor slowdowns
-3. Ensure proper material flow
-4. Regular equipment calibration
+**Total Downtime Breakdown:**
+${sortedDowntime.map(([reason, minutes]) =>
+  `• **${reason}**: ${minutes} minutes (${((minutes / totalDowntime) * 100).toFixed(1)}%)`
+).join('\n')}
 
-**Quick wins:**
-• Adjust feed rates on slower machines
-• Implement operator efficiency training
-• Review material handling processes
+**Recent Critical Issues:**
+${downLogs.filter(log => log.issue && log.alert)
+  .slice(0, 3)
+  .map(log => `• **${log.equipment_name}**: ${log.issue} (${log.alert})`)
+  .join('\n')}
 
-Need help with specific equipment optimization?`
-  }
-
-  if (message.includes('quality')) {
-    return `**Quality Performance Review:**
-
-Quality measures the percentage of products that meet specifications on first pass.
-
-**Current Quality Metrics:**
-• Overall quality rate: 98.9% (excellent!)
-• All equipment maintaining >98% quality
-• Zero critical quality issues detected
-
-**Quality maintenance strategies:**
-1. Continue regular calibration schedules
-2. Monitor process parameters closely
-3. Maintain statistical process control
-4. Regular operator quality training
-
-**Best practices:**
-• Document all quality procedures
-• Implement error-proofing where possible
-• Regular quality audits and reviews
-
-Your quality performance is industry-leading. Great job!`
-  }
-
-  if (message.includes('trend') || message.includes('analysis')) {
-    return `**Trend Analysis Summary:**
-
-**Weekly Performance Trends:**
-📈 **Improving:**
-• CNC Machine 01: +2.3% OEE improvement
-• Quality rates stable across all equipment
-
-📊 **Stable:**
-• Assembly Line 02: Consistent 89-91% range
-• Overall availability maintaining 85%+
-
-⚠️ **Watch Areas:**
-• Packaging Unit 03: Slight performance decline (-1.8%)
-• Minor increase in changeover times
+**Equipment-Specific Concerns:**
+${uniqueEquipment.map(equipment => {
+  const equipDownLogs = downLogs.filter(log => log.equipment_name === equipment)
+  const equipDowntime = equipDownLogs.reduce((sum, log) => sum + (log.duration_minutes || 0), 0)
+  return `• **${equipment}**: ${equipDowntime} min total downtime (${equipDownLogs.length} incidents)`
+}).join('\n')}
 
 **Recommendations:**
-1. Investigate Packaging Unit 03 performance drop
-2. Continue current improvement initiatives on CNC Machine 01
-3. Benchmark best practices from high-performing equipment
+1. **Priority Focus**: Address ${sortedDowntime[0]?.[0]} issues first (${sortedDowntime[0]?.[1]} min impact)
+2. **Maintenance Review**: Schedule preventive maintenance for recurring problems
+3. **Alert Response**: Improve response time to critical alerts
 
-**Predicted Impact:**
-Following these recommendations could improve overall OEE by 3-5% within 30 days.
-
-Would you like detailed analysis for specific equipment?`
+Would you like detailed incident reports for specific equipment?`
   }
 
-  if (message.includes('report')) {
-    return `**Production Efficiency Report**
+  if (message.includes('performance') || message.includes('efficiency')) {
+    const avgRunDuration = runningLogs.length > 0
+      ? (totalRuntime / runningLogs.length).toFixed(1)
+      : '0'
 
-**Executive Summary:**
-Yesterday's production achieved 86.4% overall OEE across 4 production lines.
+    const equipmentPerformance = uniqueEquipment.map(equipment => {
+      const equipRunLogs = runningLogs.filter(log => log.equipment_name === equipment)
+      const avgDuration = equipRunLogs.length > 0
+        ? (equipRunLogs.reduce((sum, log) => sum + (log.duration_minutes || 0), 0) / equipRunLogs.length).toFixed(1)
+        : '0'
 
-**Key Metrics:**
-• **Availability**: 89.2% (Target: 90%)
-• **Performance**: 94.7% (Target: 95%)
-• **Quality**: 99.1% (Target: 98%)
+      return { equipment, avgRunDuration: parseFloat(avgDuration), sessions: equipRunLogs.length }
+    }).sort((a, b) => b.avgRunDuration - a.avgRunDuration)
 
-**Top Performers:**
-1. Quality Scanner 04 - 92.3% OEE
-2. Assembly Line 02 - 89.1% OEE
+    return `**Performance Analysis from Real Data:**
 
-**Action Items:**
-• Address availability gaps on CNC Machine 01
-• Optimize cycle times on Packaging Unit 03
-• Continue quality excellence initiatives
+**Operating Efficiency Metrics:**
+• **Total running time**: ${totalRuntime} minutes across ${runningLogs.length} sessions
+• **Average run duration**: ${avgRunDuration} minutes per session
+• **Equipment utilization**: ${((runningLogs.length / totalLogs) * 100).toFixed(1)}% of logged time
 
-**Financial Impact:**
-• Estimated production value: $247,000
-• Potential improvement value: $18,000 (if reaching targets)
+**Equipment Performance Rankings:**
+${equipmentPerformance.map((item, index) =>
+  `${index + 1}. **${item.equipment}**: ${item.avgRunDuration} min avg runtime (${item.sessions} sessions)`
+).join('\n')}
+
+**Performance Insights:**
+• **Best performer**: ${equipmentPerformance[0]?.equipment} with ${equipmentPerformance[0]?.avgRunDuration} min average runs
+• **Optimization opportunity**: ${equipmentPerformance[equipmentPerformance.length - 1]?.equipment} has shorter run cycles
+
+**Operational Patterns:**
+• **Most productive periods**: Review successful ${Math.max(...equipmentPerformance.map(e => e.avgRunDuration))} minute runs
+• **Consistency**: ${equipmentPerformance.filter(e => e.sessions >= 3).length} machines show consistent operation patterns
 
 **Next Steps:**
-Schedule maintenance review and operator training sessions.
+1. Analyze what makes ${equipmentPerformance[0]?.equipment} perform well
+2. Apply best practices to improve shorter run durations
+3. Focus on extending successful operational periods
 
-Would you like the detailed breakdown for any specific equipment?`
+Need specific performance optimization recommendations?`
   }
 
-  // Default response
-  return `I'm your OEE assistant, ready to help you analyze equipment performance and optimize manufacturing efficiency.
+  if (message.includes('alert') || message.includes('warning')) {
+    const alertTypes = [...new Set(downLogs.filter(log => log.alert).map(log => log.alert))]
+    const alertsByEquipment = uniqueEquipment.map(equipment => ({
+      equipment,
+      alerts: downLogs.filter(log => log.equipment_name === equipment && log.alert).length
+    })).filter(item => item.alerts > 0).sort((a, b) => b.alerts - a.alerts)
 
-I can help you with:
-• Equipment performance analysis
-• OEE trend identification
-• Improvement recommendations
-• Production reports and insights
-• Best practice guidance
+    return `**Alert Analysis from Real Data:**
 
-**Quick actions you can try:**
-• "Show me today's OEE performance"
-• "What's causing low availability on CNC Machine 01?"
-• "Generate a weekly efficiency report"
-• "How can I improve overall performance?"
+**Alert Summary:**
+• **Total alerts**: ${downLogs.filter(log => log.alert).length} across ${totalLogs} records
+• **Alert types detected**: ${alertTypes.length}
+• **Equipment with alerts**: ${alertsByEquipment.length} out of ${uniqueEquipment.length}
 
-What would you like to explore about your equipment performance?`
+**Alert Types Identified:**
+${alertTypes.map(alert => `• ${alert}`).join('\n')}
+
+**Equipment Alert Frequency:**
+${alertsByEquipment.map((item, index) =>
+  `${index + 1}. **${item.equipment}**: ${item.alerts} alerts`
+).join('\n')}
+
+**Recent Critical Alerts:**
+${downLogs.filter(log => log.alert && log.issue)
+  .slice(0, 3)
+  .map(log => `• **${log.date}**: ${log.equipment_name} - ${log.alert} (${log.issue})`)
+  .join('\n')}
+
+**Alert Response Analysis:**
+• **Average alert duration**: ${downLogs.filter(log => log.alert).length > 0
+  ? (downLogs.filter(log => log.alert).reduce((sum, log) => sum + (log.duration_minutes || 0), 0) /
+     downLogs.filter(log => log.alert).length).toFixed(1)
+  : '0'} minutes
+
+**Recommendations:**
+1. **Monitor ${alertsByEquipment[0]?.equipment}** closely - highest alert frequency
+2. **Preventive maintenance** for recurring alert patterns
+3. **Alert response training** to reduce resolution time
+
+Would you like detailed alert history for specific equipment?`
+  }
+
+  // Default response with real data summary
+  return `I'm analyzing your equipment performance data in real-time.
+
+**Current Data Overview:**
+• **Equipment monitored**: ${uniqueEquipment.length} machines
+• **Status records**: ${totalLogs} operational logs
+• **System availability**: ${availability.toFixed(1)}%
+• **Active monitoring**: ${uniqueEquipment.join(', ')}
+
+**Quick Data Insights:**
+• **Most recent activity**: ${equipmentData[0]?.equipment_name} - ${equipmentData[0]?.status} (${equipmentData[0]?.date})
+• **Total runtime**: ${totalRuntime} minutes
+• **Downtime incidents**: ${downLogs.length} events
+
+**What I can analyze for you:**
+• **Equipment availability** and uptime analysis
+• **Downtime patterns** and root cause analysis
+• **Performance trends** across your equipment
+• **Alert monitoring** and issue tracking
+• **Operational efficiency** recommendations
+
+**Try asking:**
+• "Show me availability analysis"
+• "What are the main downtime causes?"
+• "Which equipment needs attention?"
+• "Analyze recent alerts and issues"
+
+What specific aspect of your equipment performance would you like to explore?`
 }
