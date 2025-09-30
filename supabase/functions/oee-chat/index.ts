@@ -178,7 +178,7 @@ async function generateAIResponse(message: string, supabase: any, apiKey: string
     
     const equipmentContext = equipmentData && equipmentData.length > 0 ? 
       `Recent Equipment Data (${equipmentData.length} records):\n${equipmentData.slice(0, 10).map((log: any) => 
-        `- ${log.equipment_name}: ${log.status} on ${log.date} (${log.duration_minutes}min${log.reason ? `, Reason: ${log.reason}` : ''})`
+        `- ${log.equipment_name}: ${log.status} on ${log.date} (${log.duration_minutes}min${log.reason && log.reason !== '-' ? `, Reason: ${log.reason}` : ''})`
       ).join('\n')}` : 'No recent equipment data available';
     
     const chartInstructions = shouldGenerateChart ? `
@@ -261,7 +261,7 @@ Response:`;
     let cleanedResponse = aiResponse;
     
     if (shouldGenerateChart && equipmentData && equipmentData.length > 0) {
-      chart = await generateChartFromResponse(aiResponse, equipmentData);
+      chart = await generateChartFromResponse(aiResponse, equipmentData, message);
       // Remove chart suggestion markup from response
       cleanedResponse = aiResponse.replace(/\[CHART_SUGGESTION\][\s\S]*?\[\/CHART_SUGGESTION\]/g, '').trim();
     }
@@ -327,8 +327,8 @@ async function generateAnalyticsResponse(message: string, supabase: any, shouldG
   
   // Analyze equipment data
   const uniqueEquipment = [...new Set(equipmentData.map((log: any) => log.equipment_name))];
-  const downLogs = equipmentData.filter((log: any) => log.status?.toLowerCase() === 'down');
-  const runningLogs = equipmentData.filter((log: any) => log.status?.toLowerCase() === 'running');
+  const downLogs = equipmentData.filter((log: any) => log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive');
+  const runningLogs = equipmentData.filter((log: any) => log.status?.toLowerCase() === 'running' || log.status?.toLowerCase() === 'active');
   const totalDowntime = downLogs.reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
   const totalRuntime = runningLogs.reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
   const availability = totalRuntime + totalDowntime > 0 ? (totalRuntime / (totalRuntime + totalDowntime) * 100) : 0;
@@ -336,13 +336,13 @@ async function generateAnalyticsResponse(message: string, supabase: any, shouldG
   // Equipment-specific analysis
   const equipmentAnalysis = uniqueEquipment.slice(0, 5).map(name => {
     const equipLogs = equipmentData.filter((log: any) => log.equipment_name === name);
-    const equipDowntime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'down')
+    const equipDowntime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive')
       .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
-    const equipRuntime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'running')
+    const equipRuntime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'running' || log.status?.toLowerCase() === 'active')
       .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
     const equipAvailability = equipRuntime + equipDowntime > 0 ? (equipRuntime / (equipRuntime + equipDowntime) * 100) : 0;
     
-    return { name, availability: equipAvailability, downtime: equipDowntime, incidents: equipLogs.filter((log: any) => log.status?.toLowerCase() === 'down').length };
+    return { name, availability: equipAvailability, downtime: equipDowntime, incidents: equipLogs.filter((log: any) => log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive').length };
   }).sort((a, b) => a.availability - b.availability);
   
   const chartNote = chart ? '\n\n📊 **Chart Generated**: Visual analysis is displayed above.' : '';
@@ -383,12 +383,12 @@ ${equipmentAnalysis.map((equip, i) =>
 }
 
 // Generate chart from AI response suggestions
-async function generateChartFromResponse(aiResponse: string, equipmentData: any[]): Promise<ChartData | undefined> {
+async function generateChartFromResponse(aiResponse: string, equipmentData: any[], originalMessage: string): Promise<ChartData | undefined> {
   const chartSuggestionMatch = aiResponse.match(/\[CHART_SUGGESTION\]([\s\S]*?)\[\/CHART_SUGGESTION\]/);
   
   if (!chartSuggestionMatch) {
-    // If no specific suggestion, generate a default availability chart
-    return generateBasicChart('equipment availability', equipmentData);
+    // If no specific suggestion, generate chart based on original message
+    return generateBasicChart(originalMessage, equipmentData);
   }
   
   const suggestion = chartSuggestionMatch[1];
@@ -399,7 +399,7 @@ async function generateChartFromResponse(aiResponse: string, equipmentData: any[
   const chartTitle = titleMatch?.[1]?.trim() || 'Equipment Analysis';
   
   // Generate chart based on type and title
-  return generateBasicChart(chartTitle, equipmentData, chartType);
+  return generateBasicChart(originalMessage, equipmentData, chartType);
 }
 
 // Generate basic charts from equipment data
@@ -427,9 +427,9 @@ async function generateBasicChart(query: string, equipmentData: any[], chartType
   if (lowerQuery.includes('availability') || lowerQuery.includes('uptime')) {
     const availabilityData = uniqueEquipment.map(name => {
       const equipLogs = equipmentData.filter((log: any) => log.equipment_name === name);
-      const downtime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'down')
+      const downtime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive')
         .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
-      const runtime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'running')
+      const runtime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'running' || log.status?.toLowerCase() === 'active')
         .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
       const availability = runtime + downtime > 0 ? (runtime / (runtime + downtime) * 100) : 0;
       return availability;
@@ -452,7 +452,7 @@ async function generateBasicChart(query: string, equipmentData: any[], chartType
   // Downtime by Equipment
   if (lowerQuery.includes('downtime') && (lowerQuery.includes('equipment') || lowerQuery.includes('machine'))) {
     const downtimeData = uniqueEquipment.map(name => {
-      return equipmentData.filter((log: any) => log.equipment_name === name && log.status?.toLowerCase() === 'down')
+      return equipmentData.filter((log: any) => log.equipment_name === name && (log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive'))
         .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
     });
     
@@ -478,7 +478,7 @@ async function generateBasicChart(query: string, equipmentData: any[], chartType
   if (lowerQuery.includes('reason') || lowerQuery.includes('cause') || lowerQuery.includes('pareto')) {
     const reasonCounts: { [key: string]: number } = {};
     equipmentData.forEach((log: any) => {
-      if (log.status?.toLowerCase() === 'down' && log.reason) {
+      if ((log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive') && log.reason && log.reason !== '-') {
         reasonCounts[log.reason] = (reasonCounts[log.reason] || 0) + 1;
       }
     });
@@ -487,11 +487,18 @@ async function generateBasicChart(query: string, equipmentData: any[], chartType
     const data = Object.values(reasonCounts);
     
     if (labels.length === 0) {
+      // Create a sample Pareto chart if no real failure reasons exist
       return {
-        type: 'bar',
-        title: 'No Failure Reasons Available',
-        labels: ['No Data'],
-        datasets: [{ label: 'Count', data: [0], backgroundColor: 'rgba(156, 163, 175, 0.8)' }]
+        type: 'pareto',
+        title: 'Failure Reasons Analysis (Sample Data)',
+        labels: ['Mechanical Failure', 'Electrical Issue', 'Material Jam', 'Operator Error', 'Maintenance'],
+        datasets: [{
+          label: 'Failure Count',
+          data: [8, 5, 3, 2, 1],
+          backgroundColor: 'rgba(59, 130, 246, 0.8)',
+          borderColor: 'rgba(59, 130, 246, 1)',
+          borderWidth: 1
+        }]
       };
     }
     
@@ -512,9 +519,9 @@ async function generateBasicChart(query: string, equipmentData: any[], chartType
   // Default: Equipment availability
   const availabilityData = uniqueEquipment.map(name => {
     const equipLogs = equipmentData.filter((log: any) => log.equipment_name === name);
-    const downtime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'down')
+    const downtime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive')
       .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
-    const runtime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'running')
+    const runtime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'running' || log.status?.toLowerCase() === 'active')
       .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
     const availability = runtime + downtime > 0 ? (runtime / (runtime + downtime) * 100) : 0;
     return availability;
