@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, MessageSquare, Settings, BarChart3, Trash2, Edit3, Upload } from 'lucide-react'
+import { Plus, MessageSquare, Settings, BarChart3, Trash2, CreditCard as Edit3, Upload } from 'lucide-react'
 import { supabase, ChatSession } from '../lib/supabase'
 
 interface SidebarProps {
