@@ -69,6 +69,14 @@ export function useChat() {
   }
 
   const sendMessage = async (content: string) => {
+    // Prevent sending if already loading
+    if (isLoading) {
+      console.log('⚠️ Message send prevented - already loading');
+      return;
+    }
+
+    console.log('📤 Sending message:', content);
+
     if (!currentSession) {
       const session = await createNewSession(content)
       if (!session) return
@@ -90,6 +98,7 @@ export function useChat() {
         .update({ updated_at: new Date().toISOString() })
         .eq('id', currentSession!.id)
 
+      console.log('✅ Message sent successfully');
     } catch (error) {
       console.error('Error sending message:', error)
     } finally {

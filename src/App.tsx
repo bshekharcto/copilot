@@ -28,7 +28,20 @@ function App() {
   }, [messages])
 
   const handleSendMessage = async (message: string) => {
-    await sendMessage(message)
+    console.log('🎯 handleSendMessage called with:', message);
+    console.log('🔄 Current loading state:', isLoading);
+
+    if (isLoading) {
+      console.log('⚠️ Click ignored - already loading');
+      return;
+    }
+
+    try {
+      await sendMessage(message)
+      console.log('✅ handleSendMessage completed');
+    } catch (error) {
+      console.error('❌ handleSendMessage error:', error);
+    }
   }
 
   const handleNewChat = () => {
@@ -78,16 +91,18 @@ function App() {
                       onClick={(e) => {
                         e.preventDefault()
                         e.stopPropagation()
+                        console.log('🖱️ Button clicked:', prompt);
+                        console.log('🔄 Loading state at click:', isLoading);
                         if (!isLoading) {
                           handleSendMessage(prompt)
+                        } else {
+                          console.log('⚠️ Click blocked - currently loading');
                         }
                       }}
                       disabled={isLoading}
-                      className="p-3 text-left border border-gray-200 rounded-lg transition-all duration-200 hover:border-blue-600 hover:bg-blue-50 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-full p-3 text-left text-sm font-medium text-gray-900 border border-gray-200 rounded-lg transition-all duration-200 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-900 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed select-none focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <div className="text-sm font-medium text-gray-900 hover:text-blue-900">
-                        {prompt}
-                      </div>
+                      {isLoading && currentSession === null ? '⏳ Starting chat...' : prompt}
                     </button>
                   ))}
                 </div>
