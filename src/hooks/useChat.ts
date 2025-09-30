@@ -120,6 +120,9 @@ export function useChat() {
 
 // Generate AI responses using LangChain Edge Function
 async function generateLangChainResponse(userMessage: string, sessionId: string): Promise<string> {
+  console.log('🚀 Calling Edge Function with:', { userMessage, sessionId });
+  console.log('🌐 Edge Function URL:', `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oee-chat`);
+
   try {
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oee-chat`, {
       method: 'POST',
@@ -133,29 +136,50 @@ async function generateLangChainResponse(userMessage: string, sessionId: string)
       })
     });
 
+    console.log('📡 Response status:', response.status);
+    console.log('📡 Response ok:', response.ok);
+
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorText = await response.text();
+      console.error('❌ Response error text:', errorText);
+      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
     }
 
     const data = await response.json();
+    console.log('✅ Response data received:', data);
 
     if (data.error) {
       throw new Error(data.error);
     }
 
+    console.log('🎉 Returning AI response');
     return data.response;
   } catch (error) {
-    console.error('Error calling LangChain Edge Function:', error);
+    console.error('❌ Error calling Edge Function:', error);
+    console.error('❌ Error details:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    });
 
-    // Fallback to basic response if LangChain fails
-    return `I'm experiencing some technical difficulties accessing the advanced AI analysis. However, I can still help you analyze your equipment data.
+    // Fallback to basic response if Edge Function fails
+    return `🔧 **Debug Mode Active** - Edge Function Error Detected
 
-Please try asking your question again, or you can:
-• Ask about equipment availability
-• Request downtime analysis
-• Inquire about performance metrics
-• Get alerts and issues overview
+**Error Details**: ${error.message}
 
-The system will attempt to restore full AI capabilities shortly.`;
+**Fallback Response**: I'm experiencing technical difficulties with the advanced AI system. The Edge Function at \`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oee-chat\` is not responding properly.
+
+**What I can still do**:
+• Basic equipment data analysis
+• Simple availability calculations
+• Downtime summaries
+• Alert tracking
+
+**Debugging Info**:
+- URL: ${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oee-chat
+- Session: ${sessionId}
+- Message: "${userMessage}"
+
+Please check the browser console for detailed error logs or contact support.`;
   }
 }
