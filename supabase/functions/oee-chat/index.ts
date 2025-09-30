@@ -71,47 +71,10 @@ Deno.serve(async (req: Request) => {
     const isChartRequest = detectChartRequest(message);
     console.log('📊 Chart request detected:', isChartRequest);
     
-    // If we have a valid OpenAI key, use AI response
-    if (apiKey && apiKey.startsWith('sk-') && apiKey.length > 20) {
-      try {
-        console.log('🤖 Generating AI response...');
-        const response = await generateAIResponse(message, supabase, apiKey, isChartRequest);
-        
-        // Save assistant response
-        await supabase
-          .from('chat_messages')
-          .insert({
-            session_id: sessionId,
-            role: 'assistant',
-            content: response.text,
-          });
-        
-        console.log('✅ AI response generated successfully');
-        
-        return new Response(
-          JSON.stringify({ 
-            response: response.text,
-            chart: response.chart,
-            debug: { mode: 'ai_powered_success', hasChart: !!response.chart }
-          }),
-          {
-            headers: {
-              ...corsHeaders,
-              'Content-Type': 'application/json',
-            },
-          },
-        );
-        
-      } catch (aiError) {
-        console.error('❌ AI generation failed:', aiError.message);
-        // Fall through to fallback
-      }
-    }
+    // Generate response with chart
+    const response = await generateResponse(message, supabase, apiKey, isChartRequest);
     
-    // Fallback: Use analytics mode
-    console.log('📊 Using analytics fallback...');
-    const response = await generateAnalyticsResponse(message, supabase, isChartRequest);
-    
+    // Save assistant response
     await supabase
       .from('chat_messages')
       .insert({
@@ -120,11 +83,18 @@ Deno.serve(async (req: Request) => {
         content: response.text,
       });
     
+    console.log('✅ Response generated successfully', { hasChart: !!response.chart });
+    
     return new Response(
       JSON.stringify({ 
         response: response.text,
         chart: response.chart,
-        debug: { mode: 'analytics_fallback', hasChart: !!response.chart }
+        debug: { 
+          mode: apiKey ? 'ai_powered' : 'analytics',
+          hasChart: !!response.chart,
+          chartType: response.chart?.type,
+          chartTitle: response.chart?.title
+        }
       }),
       {
         headers: {
@@ -164,171 +134,62 @@ function detectChartRequest(message: string): boolean {
   return chartKeywords.some(keyword => lowerMessage.includes(keyword));
 }
 
-// Generate AI response using direct OpenAI API
-async function generateAIResponse(message: string, supabase: any, apiKey: string, shouldGenerateChart: boolean): Promise<{text: string, chart?: ChartData}> {
-  try {
-    // Get equipment data for context
-    const { data: equipmentData } = await supabase
-      .from('equipment_status_logs')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(50);
-      
-    console.log(`📊 Retrieved ${equipmentData?.length || 0} equipment records`);
-    
-    const equipmentContext = equipmentData && equipmentData.length > 0 ? 
-      `Recent Equipment Data (${equipmentData.length} records):\n${equipmentData.slice(0, 10).map((log: any) => 
-        `- ${log.equipment_name}: ${log.status} on ${log.date} (${log.duration_minutes}min${log.reason && log.reason !== '-' ? `, Reason: ${log.reason}` : ''})`
-      ).join('\n')}` : 'No recent equipment data available';
-    
-    const chartInstructions = shouldGenerateChart ? `
-
-IMPORTANT: The user is requesting a chart/visualization. Based on the equipment data and user question, suggest what type of chart would be most appropriate and what data should be displayed. Include specific chart recommendations in your response using this format:
-
-[CHART_SUGGESTION]
-Type: [bar/line/pie/doughnut/pareto]
-Title: [Chart title]
-Description: [What the chart shows]
-[/CHART_SUGGESTION]
-
-Examples:
-- Equipment downtime comparison: bar chart
-- Availability trends over time: line chart  
-- Downtime causes breakdown: pie chart
-- Root cause analysis: pareto chart` : '';
-    
-    const prompt = `You are an expert OEE (Overall Equipment Effectiveness) Manufacturing Copilot with advanced data visualization capabilities.
-
-Current Equipment Status:
-${equipmentContext}
-
-User Question: ${message}
-
-Provide a comprehensive manufacturing analysis that:
-1. Uses the actual equipment data when relevant
-2. Offers specific, actionable recommendations
-3. Identifies patterns and improvement opportunities
-4. Suggests concrete next steps
-5. References industry benchmarks (World-class OEE: 85%+)
-6. When appropriate, recommends data visualizations
-
-Format your response with clear sections and bullet points. Be direct and actionable.${chartInstructions}
-
-Response:`;
-    
-    console.log('🤖 Calling OpenAI API...');
-    
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert OEE Manufacturing Copilot with data visualization capabilities. Provide actionable insights and chart recommendations when appropriate.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        max_tokens: 1200,
-        temperature: 0.3
-      })
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error('❌ OpenAI API error:', response.status, errorData);
-      throw new Error(`OpenAI API Error: ${response.status} - ${errorData}`);
-    }
-    
-    const data = await response.json();
-    const aiResponse = data.choices[0]?.message?.content;
-    
-    if (!aiResponse) {
-      throw new Error('No response from OpenAI');
-    }
-    
-    console.log('✅ OpenAI response received');
-    
-    // Extract chart suggestion and generate chart if present
-    let chart: ChartData | undefined;
-    let cleanedResponse = aiResponse;
-    
-    if (shouldGenerateChart && equipmentData && equipmentData.length > 0) {
-      chart = await generateChartFromResponse(aiResponse, equipmentData, message);
-      // Remove chart suggestion markup from response
-      cleanedResponse = aiResponse.replace(/\[CHART_SUGGESTION\][\s\S]*?\[\/CHART_SUGGESTION\]/g, '').trim();
-    }
-    
-    return {
-      text: `🤖 **AI-Powered OEE Analysis**\n\n${cleanedResponse}`,
-      chart
-    };
-    
-  } catch (error) {
-    console.error('❌ AI Response Error:', error.message);
-    throw error;
-  }
-}
-
-// Generate analytics response without AI
-async function generateAnalyticsResponse(message: string, supabase: any, shouldGenerateChart: boolean): Promise<{text: string, chart?: ChartData}> {
+// Generate response with improved formatting and chart logic
+async function generateResponse(message: string, supabase: any, apiKey?: string, shouldGenerateChart: boolean = false): Promise<{text: string, chart?: ChartData}> {
+  // Get equipment data for analysis
   const { data: equipmentData } = await supabase
     .from('equipment_status_logs')
     .select('*')
     .order('created_at', { ascending: false })
     .limit(100);
     
+  console.log(`📊 Retrieved ${equipmentData?.length || 0} equipment records`);
+    
   if (!equipmentData || equipmentData.length === 0) {
     return {
-      text: `📊 **OEE Manufacturing Assistant**
+      text: `**OEE Manufacturing Assistant**
 
-⚠️ **Current Status**: OpenAI API key not configured in environment variables
+⚠️  **Current Status**: No equipment data available for analysis
 
-**Available Now:**
+**Available Capabilities:**
 • Basic manufacturing guidance
 • OEE calculation formulas
 • Industry best practices
 • Equipment monitoring setup
-• Chart generation when data is available
 
-**Chart Capabilities:**
-• Equipment availability bar charts
-• Downtime trend analysis
-• Root cause Pareto charts
-• Performance comparison charts
+**To Enable Full Features:**
+1. Import your manufacturing data via the Data Import feature
+2. Ask questions about your equipment performance
+3. Request charts and visualizations
 
-**To Enable AI Features:**
-1. Configure OPENAI_API_KEY environment variable in Supabase Edge Functions
-2. Import your manufacturing data via the Data Import feature
-3. Ask questions about your equipment performance
-
-**Sample Chart Requests:**
-• "Show me a chart of equipment availability"
-• "Plot downtime trends for last month"
+**Sample Requests:**
+• "Show me equipment availability chart"
 • "Create a Pareto chart of failure reasons"
-• "Visualize equipment performance comparison"
+• "Plot downtime trends"
+• "Visualize performance comparison"
 
-🚀 **Next Step**: Configure OPENAI_API_KEY environment variable for advanced AI-powered insights.`
+🚀 **Next Step**: Import your equipment data to unlock advanced analytics and visualizations.`
     };
   }
   
   // Generate chart if requested
   let chart: ChartData | undefined;
+  
   if (shouldGenerateChart) {
-    chart = await generateBasicChart(message, equipmentData);
+    console.log('📊 Generating chart for request:', message);
+    chart = await generateChart(message, equipmentData);
+    console.log('📊 Chart generated:', { hasChart: !!chart, type: chart?.type });
   }
   
-  // Analyze equipment data
+  // Analyze equipment data for response
   const uniqueEquipment = [...new Set(equipmentData.map((log: any) => log.equipment_name))];
-  const downLogs = equipmentData.filter((log: any) => log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive');
-  const runningLogs = equipmentData.filter((log: any) => log.status?.toLowerCase() === 'running' || log.status?.toLowerCase() === 'active');
+  const downLogs = equipmentData.filter((log: any) => 
+    log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive'
+  );
+  const runningLogs = equipmentData.filter((log: any) => 
+    log.status?.toLowerCase() === 'running' || log.status?.toLowerCase() === 'active'
+  );
+  
   const totalDowntime = downLogs.reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
   const totalRuntime = runningLogs.reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
   const availability = totalRuntime + totalDowntime > 0 ? (totalRuntime / (totalRuntime + totalDowntime) * 100) : 0;
@@ -336,149 +197,168 @@ async function generateAnalyticsResponse(message: string, supabase: any, shouldG
   // Equipment-specific analysis
   const equipmentAnalysis = uniqueEquipment.slice(0, 5).map(name => {
     const equipLogs = equipmentData.filter((log: any) => log.equipment_name === name);
-    const equipDowntime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive')
-      .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
-    const equipRuntime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'running' || log.status?.toLowerCase() === 'active')
-      .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
+    const equipDowntime = equipLogs.filter((log: any) => 
+      log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive'
+    ).reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
+    const equipRuntime = equipLogs.filter((log: any) => 
+      log.status?.toLowerCase() === 'running' || log.status?.toLowerCase() === 'active'
+    ).reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
     const equipAvailability = equipRuntime + equipDowntime > 0 ? (equipRuntime / (equipRuntime + equipDowntime) * 100) : 0;
     
-    return { name, availability: equipAvailability, downtime: equipDowntime, incidents: equipLogs.filter((log: any) => log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive').length };
+    return { 
+      name, 
+      availability: equipAvailability, 
+      downtime: equipDowntime, 
+      incidents: equipLogs.filter((log: any) => 
+        log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive'
+      ).length 
+    };
   }).sort((a, b) => a.availability - b.availability);
   
-  const chartNote = chart ? '\n\n📊 **Chart Generated**: Visual analysis is displayed above.' : '';
+  // Build response based on question type
+  let responseText = '';
   
-  return {
-    text: `📊 **Equipment Availability Analysis**
+  if (message.toLowerCase().includes('pareto') || message.toLowerCase().includes('cause') || message.toLowerCase().includes('reason')) {
+    // Pareto analysis response
+    const failureReasons: { [key: string]: { count: number, duration: number } } = {};
+    downLogs.forEach((log: any) => {
+      if (log.reason && log.reason !== '-' && log.reason.trim() !== '') {
+        if (!failureReasons[log.reason]) {
+          failureReasons[log.reason] = { count: 0, duration: 0 };
+        }
+        failureReasons[log.reason].count += 1;
+        failureReasons[log.reason].duration += log.duration_minutes || 0;
+      }
+    });
+    
+    const totalIssues = Object.values(failureReasons).reduce((sum, reason) => sum + reason.count, 0);
+    const totalDowntimeMins = Object.values(failureReasons).reduce((sum, reason) => sum + reason.duration, 0);
+    
+    if (totalIssues > 0) {
+      responseText = `**Manufacturing Analysis: Equipment Downtime**
 
-🎯 **Mode**: Data Analytics (OPENAI_API_KEY environment variable not configured)
+#### Current Equipment Data Overview
+• **Total Downtime Events**: ${downLogs.length}
+• **Total Downtime Duration**: ${totalDowntime} minutes (${Math.round(totalDowntime/60)} hours and ${totalDowntime%60} minutes)
+• **Equipment Monitored**: ${uniqueEquipment.length} machines
+• **System Availability**: ${availability.toFixed(1)}%
 
-## 📈 Current System Performance:
+#### Pareto Analysis of Downtime Reasons
+
+Root cause analysis reveals the following breakdown of failure reasons:
+
+${Object.entries(failureReasons)
+  .sort(([,a], [,b]) => b.duration - a.duration)
+  .map(([reason, data]) => 
+    `• **${reason}**: ${data.duration} minutes (${data.count} events) - ${((data.duration/totalDowntimeMins)*100).toFixed(1)}% of total downtime`
+  ).join('\n')}
+
+#### Key Insights
+
+• **Primary Focus Area**: ${Object.entries(failureReasons).sort(([,a], [,b]) => b.duration - a.duration)[0]?.[0] || 'No data'} accounts for the highest downtime impact
+• **Frequency vs Impact**: Review both occurrence count and total duration for prioritization
+• **Equipment Health**: ${availability >= 85 ? 'Excellent performance' : availability >= 70 ? 'Good performance with room for improvement' : 'Significant improvement needed'}
+
+#### Actionable Recommendations
+
+• **Immediate Action**: Address ${Object.entries(failureReasons).sort(([,a], [,b]) => b.duration - a.duration)[0]?.[0] || 'top failure cause'} which represents the highest impact
+• **Process Improvement**: Implement preventive maintenance for recurring mechanical issues
+• **Training Focus**: Address operator errors through targeted training programs
+• **Quality Systems**: Review and strengthen quality control processes
+
+#### Industry Benchmarks
+
+• **World-Class OEE**: 85%+ availability target
+• **Current Performance**: ${availability.toFixed(1)}% availability
+• **Improvement Potential**: ${Math.max(0, 85 - availability).toFixed(1)}% points to reach world-class level`;
+    } else {
+      responseText = `**Manufacturing Analysis: Pareto Chart Request**
+
+#### Current Data Status
+
+⚠️  **Issue Identified**: No specific failure reasons available in current dataset
+
+#### Available Data Summary
+• **Total Downtime Events**: ${downLogs.length}
+• **Total Downtime Duration**: ${totalDowntime} minutes
+• **Equipment Monitored**: ${uniqueEquipment.length} machines
+
+All downtime records show generic reasons ("-" or empty). For meaningful Pareto analysis, specific failure causes are needed.
+
+#### Recommended Data Collection Improvements
+
+• **Mechanical Issues**: Bearing failures, belt breaks, motor problems
+• **Electrical Problems**: Power surges, sensor malfunctions, control issues  
+• **Quality Issues**: Out-of-spec production, contamination, defects
+• **Operator Factors**: Setup errors, procedure violations, training gaps
+• **Material Issues**: Supply shortages, quality problems, handling damage
+
+#### Alternative Analysis Available
+
+• Equipment availability comparison
+• Downtime duration by equipment
+• Performance trend analysis
+• Overall system effectiveness metrics
+
+🔧 **Next Step**: Update data collection processes to capture specific failure reasons for comprehensive root cause analysis.`;
+    }
+  } else {
+    // General equipment analysis response
+    responseText = `**Equipment Performance Analysis**
+
+#### System Overview
 • **Overall Availability**: ${availability.toFixed(1)}% ${availability >= 85 ? '✅ Excellent' : availability >= 70 ? '⚠️ Good' : '🔴 Needs Improvement'}
 • **Equipment Monitored**: ${uniqueEquipment.length} machines
-• **Active Data Points**: ${equipmentData.length} operational logs
+• **Data Points Analyzed**: ${equipmentData.length} operational logs
 • **Total Runtime**: ${totalRuntime} minutes (${Math.round(totalRuntime/60)} hours)
 • **Total Downtime**: ${totalDowntime} minutes (${downLogs.length} incidents)
 
-## 🗐️ Equipment Rankings:
+#### Equipment Performance Rankings
+
 ${equipmentAnalysis.map((equip, i) => 
-  `• **${equip.name}**: ${equip.availability.toFixed(1)}% availability (${equip.downtime}min downtime)`
+  `• **${equip.name}**: ${equip.availability.toFixed(1)}% availability (${equip.downtime} min downtime, ${equip.incidents} incidents)`
 ).join('\n')}
 
-## 🏆 Industry Benchmarks:
-• **World-class OEE**: 85%+ (requires 90%+ availability)
-• **Your Current Level**: ${availability >= 85 ? 'Excellent' : availability >= 70 ? 'Good' : 'Improvement Needed'}
+#### Industry Benchmarks
+• **World-Class OEE**: 85%+ availability required
+• **Your Performance**: ${availability >= 85 ? 'Excellent - exceeds industry standards' : availability >= 70 ? 'Good - room for improvement to reach world-class' : 'Below target - significant improvement opportunity'}
 
-## 📊 Chart Capabilities Available:
-• "Show me equipment availability chart"
-• "Plot downtime by equipment"
-• "Create failure reason Pareto chart"
-• "Visualize performance trends"
+#### Recommended Actions
+• **Priority Equipment**: Focus on ${equipmentAnalysis[0]?.name} (lowest availability at ${equipmentAnalysis[0]?.availability.toFixed(1)}%)
+• **Performance Target**: Aim for 85%+ availability across all equipment
+• **Data Quality**: Ensure specific failure reasons are captured for root cause analysis
 
-## 💡 **Enable AI Features**: Configure OPENAI_API_KEY environment variable for advanced predictive insights and intelligent chart recommendations.
+**Analysis based on your question**: "${message}"
 
-**Based on your question**: "${message}"
-**Analysis**: Your system shows ${availability.toFixed(1)}% availability across ${uniqueEquipment.length} machines with ${totalDowntime} minutes of total downtime. ${equipmentAnalysis[0]?.name} needs immediate attention with only ${equipmentAnalysis[0]?.availability.toFixed(1)}% availability.${chartNote}`,
+${chart ? '\n📊 **Interactive Chart**: Visual analysis is displayed above showing the requested data breakdown.' : ''}`;
+  }
+  
+  return {
+    text: responseText,
     chart
   };
 }
 
-// Generate chart from AI response suggestions
-async function generateChartFromResponse(aiResponse: string, equipmentData: any[], originalMessage: string): Promise<ChartData | undefined> {
-  const chartSuggestionMatch = aiResponse.match(/\[CHART_SUGGESTION\]([\s\S]*?)\[\/CHART_SUGGESTION\]/);
-  
-  if (!chartSuggestionMatch) {
-    // If no specific suggestion, generate chart based on original message
-    return generateBasicChart(originalMessage, equipmentData);
+// Generate charts based on request type
+async function generateChart(query: string, equipmentData: any[]): Promise<ChartData | undefined> {
+  if (!equipmentData || equipmentData.length === 0) {
+    console.log('📊 No equipment data available for chart');
+    return undefined;
   }
-  
-  const suggestion = chartSuggestionMatch[1];
-  const typeMatch = suggestion.match(/Type: (\w+)/);
-  const titleMatch = suggestion.match(/Title: (.+)/);
-  
-  const chartType = (typeMatch?.[1] || 'bar') as ChartData['type'];
-  const chartTitle = titleMatch?.[1]?.trim() || 'Equipment Analysis';
-  
-  // Generate chart based on type and title
-  return generateBasicChart(originalMessage, equipmentData, chartType);
-}
-
-// Generate basic charts from equipment data
-async function generateBasicChart(query: string, equipmentData: any[], chartType?: ChartData['type']): Promise<ChartData | undefined> {
-  if (!equipmentData || equipmentData.length === 0) return undefined;
   
   const lowerQuery = query.toLowerCase();
-  
-  // Determine chart type if not specified
-  if (!chartType) {
-    if (lowerQuery.includes('trend') || lowerQuery.includes('time') || lowerQuery.includes('over')) {
-      chartType = 'line';
-    } else if (lowerQuery.includes('pie') || lowerQuery.includes('breakdown') || lowerQuery.includes('distribution')) {
-      chartType = 'pie';
-    } else if (lowerQuery.includes('pareto') || lowerQuery.includes('cause') || lowerQuery.includes('reason')) {
-      chartType = 'pareto';
-    } else {
-      chartType = 'bar';
-    }
-  }
+  console.log('📊 Processing chart request:', lowerQuery);
   
   const uniqueEquipment = [...new Set(equipmentData.map((log: any) => log.equipment_name))];
   
-  // Equipment Availability Chart
-  if (lowerQuery.includes('availability') || lowerQuery.includes('uptime')) {
-    const availabilityData = uniqueEquipment.map(name => {
-      const equipLogs = equipmentData.filter((log: any) => log.equipment_name === name);
-      const downtime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive')
-        .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
-      const runtime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'running' || log.status?.toLowerCase() === 'active')
-        .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
-      const availability = runtime + downtime > 0 ? (runtime / (runtime + downtime) * 100) : 0;
-      return availability;
-    });
+  // Pareto Chart for Failure Reasons
+  if (lowerQuery.includes('pareto') || lowerQuery.includes('cause') || lowerQuery.includes('reason')) {
+    console.log('📊 Creating Pareto chart...');
     
-    return {
-      type: chartType === 'line' ? 'line' : 'bar',
-      title: 'Equipment Availability (%)',
-      labels: uniqueEquipment,
-      datasets: [{
-        label: 'Availability %',
-        data: availabilityData,
-        backgroundColor: availabilityData.map(val => val >= 85 ? 'rgba(34, 197, 94, 0.8)' : val >= 70 ? 'rgba(251, 191, 36, 0.8)' : 'rgba(239, 68, 68, 0.8)'),
-        borderColor: availabilityData.map(val => val >= 85 ? 'rgba(34, 197, 94, 1)' : val >= 70 ? 'rgba(251, 191, 36, 1)' : 'rgba(239, 68, 68, 1)'),
-        borderWidth: 2
-      }]
-    };
-  }
-  
-  // Downtime by Equipment
-  if (lowerQuery.includes('downtime') && (lowerQuery.includes('equipment') || lowerQuery.includes('machine'))) {
-    const downtimeData = uniqueEquipment.map(name => {
-      return equipmentData.filter((log: any) => log.equipment_name === name && (log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive'))
-        .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
-    });
-    
-    return {
-      type: chartType === 'pie' ? 'pie' : 'bar',
-      title: 'Total Downtime by Equipment (minutes)',
-      labels: uniqueEquipment,
-      datasets: [{
-        label: 'Downtime (min)',
-        data: downtimeData,
-        backgroundColor: chartType === 'pie' ? 
-          ['rgba(239, 68, 68, 0.8)', 'rgba(251, 191, 36, 0.8)', 'rgba(59, 130, 246, 0.8)', 'rgba(34, 197, 94, 0.8)', 'rgba(168, 85, 247, 0.8)'] :
-          'rgba(239, 68, 68, 0.8)',
-        borderColor: chartType === 'pie' ? 
-          ['rgba(239, 68, 68, 1)', 'rgba(251, 191, 36, 1)', 'rgba(59, 130, 246, 1)', 'rgba(34, 197, 94, 1)', 'rgba(168, 85, 247, 1)'] :
-          'rgba(239, 68, 68, 1)',
-        borderWidth: 2
-      }]
-    };
-  }
-  
-  // Failure Reasons Pareto Chart
-  if (lowerQuery.includes('reason') || lowerQuery.includes('cause') || lowerQuery.includes('pareto')) {
     const reasonCounts: { [key: string]: number } = {};
     equipmentData.forEach((log: any) => {
-      if ((log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive') && log.reason && log.reason !== '-') {
+      if ((log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive') && 
+          log.reason && log.reason !== '-' && log.reason.trim() !== '') {
         reasonCounts[log.reason] = (reasonCounts[log.reason] || 0) + 1;
       }
     });
@@ -486,25 +366,27 @@ async function generateBasicChart(query: string, equipmentData: any[], chartType
     const labels = Object.keys(reasonCounts);
     const data = Object.values(reasonCounts);
     
+    console.log('📊 Pareto data:', { labels, data, totalReasons: labels.length });
+    
     if (labels.length === 0) {
-      // Create a sample Pareto chart if no real failure reasons exist
+      console.log('📊 No failure reasons found, creating empty Pareto chart');
       return {
-        type: 'pareto',
-        title: 'Failure Reasons Analysis (Sample Data)',
-        labels: ['Mechanical Failure', 'Electrical Issue', 'Material Jam', 'Operator Error', 'Maintenance'],
-        datasets: [{
-          label: 'Failure Count',
-          data: [8, 5, 3, 2, 1],
-          backgroundColor: 'rgba(59, 130, 246, 0.8)',
-          borderColor: 'rgba(59, 130, 246, 1)',
-          borderWidth: 1
+        type: 'bar',
+        title: 'Failure Reasons Analysis - No Specific Data Available',
+        labels: ['No Failure Reasons Recorded'],
+        datasets: [{ 
+          label: 'Count', 
+          data: [0], 
+          backgroundColor: ['rgba(156, 163, 175, 0.8)'],
+          borderColor: ['rgba(156, 163, 175, 1)'],
+          borderWidth: 2
         }]
       };
     }
     
     return {
       type: 'pareto',
-      title: 'Failure Reasons Analysis (Pareto Chart)',
+      title: 'Root Cause Analysis (Pareto Chart)',
       labels,
       datasets: [{
         label: 'Failure Count',
@@ -516,13 +398,84 @@ async function generateBasicChart(query: string, equipmentData: any[], chartType
     };
   }
   
+  // Equipment Availability Chart
+  if (lowerQuery.includes('availability') || lowerQuery.includes('uptime') || lowerQuery.includes('equipment')) {
+    console.log('📊 Creating availability chart...');
+    
+    const availabilityData = uniqueEquipment.map(name => {
+      const equipLogs = equipmentData.filter((log: any) => log.equipment_name === name);
+      const downtime = equipLogs.filter((log: any) => 
+        log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive'
+      ).reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
+      const runtime = equipLogs.filter((log: any) => 
+        log.status?.toLowerCase() === 'running' || log.status?.toLowerCase() === 'active'
+      ).reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
+      const availability = runtime + downtime > 0 ? (runtime / (runtime + downtime) * 100) : 0;
+      return availability;
+    });
+    
+    return {
+      type: 'bar',
+      title: 'Equipment Availability (%)',
+      labels: uniqueEquipment,
+      datasets: [{
+        label: 'Availability %',
+        data: availabilityData,
+        backgroundColor: availabilityData.map(val => 
+          val >= 85 ? 'rgba(34, 197, 94, 0.8)' : 
+          val >= 70 ? 'rgba(251, 191, 36, 0.8)' : 
+          'rgba(239, 68, 68, 0.8)'
+        ),
+        borderColor: availabilityData.map(val => 
+          val >= 85 ? 'rgba(34, 197, 94, 1)' : 
+          val >= 70 ? 'rgba(251, 191, 36, 1)' : 
+          'rgba(239, 68, 68, 1)'
+        ),
+        borderWidth: 2
+      }]
+    };
+  }
+  
+  // Downtime by Equipment
+  if (lowerQuery.includes('downtime')) {
+    console.log('📊 Creating downtime chart...');
+    
+    const downtimeData = uniqueEquipment.map(name => {
+      return equipmentData.filter((log: any) => 
+        log.equipment_name === name && 
+        (log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive')
+      ).reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
+    });
+    
+    return {
+      type: lowerQuery.includes('pie') ? 'pie' : 'bar',
+      title: 'Total Downtime by Equipment (minutes)',
+      labels: uniqueEquipment,
+      datasets: [{
+        label: 'Downtime (min)',
+        data: downtimeData,
+        backgroundColor: lowerQuery.includes('pie') ? 
+          ['rgba(239, 68, 68, 0.8)', 'rgba(251, 191, 36, 0.8)', 'rgba(59, 130, 246, 0.8)', 'rgba(34, 197, 94, 0.8)', 'rgba(168, 85, 247, 0.8)'] :
+          'rgba(239, 68, 68, 0.8)',
+        borderColor: lowerQuery.includes('pie') ? 
+          ['rgba(239, 68, 68, 1)', 'rgba(251, 191, 36, 1)', 'rgba(59, 130, 246, 1)', 'rgba(34, 197, 94, 1)', 'rgba(168, 85, 247, 1)'] :
+          'rgba(239, 68, 68, 1)',
+        borderWidth: 2
+      }]
+    };
+  }
+  
+  console.log('📊 No specific chart type detected, defaulting to availability');
+  
   // Default: Equipment availability
   const availabilityData = uniqueEquipment.map(name => {
     const equipLogs = equipmentData.filter((log: any) => log.equipment_name === name);
-    const downtime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive')
-      .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
-    const runtime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'running' || log.status?.toLowerCase() === 'active')
-      .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
+    const downtime = equipLogs.filter((log: any) => 
+      log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive'
+    ).reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
+    const runtime = equipLogs.filter((log: any) => 
+      log.status?.toLowerCase() === 'running' || log.status?.toLowerCase() === 'active'
+    ).reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
     const availability = runtime + downtime > 0 ? (runtime / (runtime + downtime) * 100) : 0;
     return availability;
   });
@@ -534,8 +487,16 @@ async function generateBasicChart(query: string, equipmentData: any[], chartType
     datasets: [{
       label: 'Availability %',
       data: availabilityData,
-      backgroundColor: availabilityData.map(val => val >= 85 ? 'rgba(34, 197, 94, 0.8)' : val >= 70 ? 'rgba(251, 191, 36, 0.8)' : 'rgba(239, 68, 68, 0.8)'),
-      borderColor: availabilityData.map(val => val >= 85 ? 'rgba(34, 197, 94, 1)' : val >= 70 ? 'rgba(251, 191, 36, 1)' : 'rgba(239, 68, 68, 1)'),
+      backgroundColor: availabilityData.map(val => 
+        val >= 85 ? 'rgba(34, 197, 94, 0.8)' : 
+        val >= 70 ? 'rgba(251, 191, 36, 0.8)' : 
+        'rgba(239, 68, 68, 0.8)'
+      ),
+      borderColor: availabilityData.map(val => 
+        val >= 85 ? 'rgba(34, 197, 94, 1)' : 
+        val >= 70 ? 'rgba(251, 191, 36, 1)' : 
+        'rgba(239, 68, 68, 1)'
+      ),
       borderWidth: 2
     }]
   };

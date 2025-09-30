@@ -6,6 +6,68 @@ interface ChatMessageProps {
   message: ChatMessageType
 }
 
+// Format markdown-like content to proper HTML
+function formatContent(content: string): JSX.Element {
+  const lines = content.split('\n')
+  const elements: JSX.Element[] = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+
+    if (line.startsWith('### ')) {
+      elements.push(<h3 key={i} className="text-lg font-semibold text-gray-900 mt-4 mb-2">{line.substring(4)}</h3>)
+    } else if (line.startsWith('## ')) {
+      elements.push(<h2 key={i} className="text-xl font-bold text-gray-900 mt-4 mb-2">{line.substring(3)}</h2>)
+    } else if (line.startsWith('# ')) {
+      elements.push(<h1 key={i} className="text-2xl font-bold text-gray-900 mt-4 mb-2">{line.substring(2)}</h1>)
+    } else if (line.startsWith('#### ')) {
+      elements.push(<h4 key={i} className="text-base font-semibold text-gray-800 mt-3 mb-2">{line.substring(5)}</h4>)
+    } else if (line.startsWith('- **') && line.includes('**:')) {
+      // Bullet point with bold text
+      const match = line.match(/^- \*\*(.*?)\*\*: (.*)$/)
+      if (match) {
+        elements.push(
+          <li key={i} className="ml-4 mb-1">
+            <span className="font-semibold text-gray-900">{match[1]}</span>: {match[2]}
+          </li>
+        )
+      } else {
+        elements.push(<li key={i} className="ml-4 mb-1">{line.substring(2)}</li>)
+      }
+    } else if (line.startsWith('• **') && line.includes('**:')) {
+      // Bullet point with bold text (different bullet style)
+      const match = line.match(/^• \*\*(.*?)\*\*: (.*)$/)
+      if (match) {
+        elements.push(
+          <li key={i} className="ml-4 mb-1">
+            <span className="font-semibold text-gray-900">{match[1]}</span>: {match[2]}
+          </li>
+        )
+      } else {
+        elements.push(<li key={i} className="ml-4 mb-1">{line.substring(2)}</li>)
+      }
+    } else if (line.startsWith('- ') || line.startsWith('• ')) {
+      elements.push(<li key={i} className="ml-4 mb-1">{line.substring(2)}</li>)
+    } else if (line.includes('**') && line.includes('**')) {
+      // Bold text inline
+      const parts = line.split(/(\*\*.*?\*\*)/g)
+      const formatted = parts.map((part, idx) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return <strong key={idx} className="font-semibold text-gray-900">{part.substring(2, part.length - 2)}</strong>
+        }
+        return part
+      })
+      elements.push(<p key={i} className="mb-2">{formatted}</p>)
+    } else if (line.trim() === '') {
+      elements.push(<br key={i} />)
+    } else {
+      elements.push(<p key={i} className="mb-2">{line}</p>)
+    }
+  }
+
+  return <div>{elements}</div>
+}
+
 export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user'
 
@@ -66,23 +128,31 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
         {hasDirectChart ? (
           <div className="space-y-4">
-            <div className="text-gray-700 whitespace-pre-wrap">{message.content}</div>
+            <div className="text-gray-700 prose prose-sm max-w-none">
+              {formatContent(message.content)}
+            </div>
             <Chart chartData={message.chart!} />
           </div>
         ) : parsedContent.hasChart ? (
           <div className="space-y-4">
             {parsedContent.textBefore && (
-              <div className="text-gray-700 whitespace-pre-wrap">{parsedContent.textBefore}</div>
+              <div className="text-gray-700 prose prose-sm max-w-none">
+                {formatContent(parsedContent.textBefore)}
+              </div>
             )}
 
             <Chart chartData={parsedContent.chartData!} />
 
             {parsedContent.textAfter && (
-              <div className="text-gray-700 whitespace-pre-wrap">{parsedContent.textAfter}</div>
+              <div className="text-gray-700 prose prose-sm max-w-none">
+                {formatContent(parsedContent.textAfter)}
+              </div>
             )}
           </div>
         ) : (
-          <div className="text-gray-700 whitespace-pre-wrap">{parsedContent.text || message.content}</div>
+          <div className="text-gray-700 prose prose-sm max-w-none">
+            {formatContent(parsedContent.text || message.content)}
+          </div>
         )}
 
         <div className="text-xs text-gray-500 mt-2">
