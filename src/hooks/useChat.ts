@@ -77,28 +77,11 @@ export function useChat() {
     setIsLoading(true)
 
     try {
-      // Add user message
-      const userMessage = {
-        session_id: currentSession!.id,
-        role: 'user' as const,
-        content
-      }
-
-      const { data: userMsgData, error: userMsgError } = await supabase
-        .from('chat_messages')
-        .insert(userMessage)
-        .select()
-        .single()
-
-      if (userMsgError) throw userMsgError
-
-      setMessages(prev => [...prev, userMsgData])
-
       // Generate AI response using LangChain Edge Function
+      // The Edge Function will save both user and assistant messages
       const aiResponse = await generateLangChainResponse(content, currentSession!.id)
 
-      // The Edge Function already saves the assistant message to database
-      // So we just need to reload the messages to get the latest ones
+      // Reload messages to get the latest ones from the Edge Function
       await loadMessages(currentSession!.id)
 
       // Update session timestamp
