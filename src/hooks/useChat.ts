@@ -97,9 +97,6 @@ export function useChat() {
 
       // Store chart data if present
       if (typeof aiResponse === 'object' && aiResponse.chart) {
-        // We'll need to get the latest message ID after reloading
-        await loadMessages(currentSession!.id)
-
         // Find the most recent assistant message and associate the chart with it
         const updatedMessages = await supabase
           .from('chat_messages')
@@ -111,10 +108,27 @@ export function useChat() {
 
         if (updatedMessages.data && updatedMessages.data.length > 0) {
           const messageId = updatedMessages.data[0].id
+
+          // Update chart state FIRST
           setMessageCharts(prev => ({
             ...prev,
             [messageId]: aiResponse.chart
           }))
+
+          // Then reload messages with the chart data
+          const { data, error } = await supabase
+            .from('chat_messages')
+            .select('*')
+            .eq('session_id', currentSession!.id)
+            .order('timestamp', { ascending: true })
+
+          if (!error && data) {
+            const messagesWithCharts = data.map(message => ({
+              ...message,
+              chart: message.id === messageId ? aiResponse.chart : messageCharts[message.id]
+            }))
+            setMessages(messagesWithCharts)
+          }
         }
       } else {
         // Reload messages to get the latest ones from the Edge Function
