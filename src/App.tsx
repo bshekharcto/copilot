@@ -63,11 +63,11 @@ function App() {
           {messages.length === 0 ? (
             <div className="h-full flex items-center justify-center p-8">
               <div className="text-center max-w-2xl">
-                <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: '#E8F2FF' }}>
-                  <span className="text-2xl">🤖</span>
+                <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 bg-gray-700">
+                  <span className="text-white text-xs font-semibold">AI</span>
                 </div>
                 <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                  OEE Assistant Ready
+                  OEE Manufacturing Assistant
                 </h2>
                 <p className="text-gray-600 mb-8">
                   I can help you analyze equipment performance, identify trends, and provide optimization recommendations based on your actual equipment data.
@@ -86,7 +86,7 @@ function App() {
                       disabled={isLoading}
                       className="w-full p-3 text-left text-sm font-medium text-gray-900 border border-gray-200 rounded-lg transition-all duration-200 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-900 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed select-none focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      {isLoading ? '⏳ Processing...' : prompt}
+                      {isLoading ? 'Processing...' : prompt}
                     </button>
                   ))}
                 </div>
@@ -114,7 +114,7 @@ function App() {
                       <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
                       <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse delay-75"></div>
                       <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse delay-150"></div>
-                      <span className="text-sm text-gray-500 ml-2">Analyzing...</span>
+                      <span className="text-sm text-gray-500 ml-2">Processing request...</span>
                     </div>
                   </div>
                 </div>

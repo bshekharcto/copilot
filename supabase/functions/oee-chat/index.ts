@@ -36,7 +36,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const { message, sessionId }: ChatRequest = await req.json();
-    console.log('🚀 OEE Chat request:', { message: message.substring(0, 50), sessionId });
+    console.log('\ud83d\ude80 OEE Chat request:', { message: message.substring(0, 50), sessionId });
 
     // Initialize Supabase client
     const supabase = createClient(
@@ -54,22 +54,22 @@ Deno.serve(async (req: Request) => {
       });
 
     if (userMsgError) {
-      console.error('❌ Error saving user message:', userMsgError);
+      console.error('\u274c Error saving user message:', userMsgError);
       throw new Error('Failed to save user message');
     }
-    console.log('✅ User message saved');
+    console.log('\u2705 User message saved');
 
     // Get API key from environment
     const apiKey = Deno.env.get('OPENAI_API_KEY');
     
-    console.log('🔑 API Key status:', {
+    console.log('\ud83d\udd11 API Key status:', {
       hasKey: !!apiKey,
       isValid: apiKey ? apiKey.startsWith('sk-') && apiKey.length > 20 : false
     });
     
     // Check if user is requesting a chart
     const isChartRequest = detectChartRequest(message);
-    console.log('📊 Chart request detected:', isChartRequest);
+    console.log('\ud83d\udcca Chart request detected:', isChartRequest);
     
     // Generate response with chart
     const response = await generateResponse(message, supabase, apiKey, isChartRequest);
@@ -83,7 +83,7 @@ Deno.serve(async (req: Request) => {
         content: response.text,
       });
     
-    console.log('✅ Response generated successfully', { hasChart: !!response.chart });
+    console.log('\u2705 Response generated successfully', { hasChart: !!response.chart });
     
     return new Response(
       JSON.stringify({ 
@@ -105,7 +105,7 @@ Deno.serve(async (req: Request) => {
     );
 
   } catch (error) {
-    console.error('❌ Function error:', error);
+    console.error('\u274c Function error:', error);
     return new Response(
       JSON.stringify({ 
         error: 'Function execution failed',
@@ -143,13 +143,13 @@ async function generateResponse(message: string, supabase: any, apiKey?: string,
     .order('created_at', { ascending: false })
     .limit(100);
     
-  console.log(`📊 Retrieved ${equipmentData?.length || 0} equipment records`);
+  console.log(`Retrieved ${equipmentData?.length || 0} equipment records`);
     
   if (!equipmentData || equipmentData.length === 0) {
     return {
       text: `**OEE Manufacturing Assistant**
 
-⚠️  **Current Status**: No equipment data available for analysis
+**Current Status**: No equipment data available for analysis
 
 **Available Capabilities:**
 • Basic manufacturing guidance
@@ -168,7 +168,7 @@ async function generateResponse(message: string, supabase: any, apiKey?: string,
 • "Plot downtime trends"
 • "Visualize performance comparison"
 
-🚀 **Next Step**: Import your equipment data to unlock advanced analytics and visualizations.`
+**Next Step**: Import your equipment data to unlock advanced analytics and visualizations.`
     };
   }
   
@@ -176,9 +176,9 @@ async function generateResponse(message: string, supabase: any, apiKey?: string,
   let chart: ChartData | undefined;
   
   if (shouldGenerateChart) {
-    console.log('📊 Generating chart for request:', message);
+    console.log('Generating chart for request:', message);
     chart = await generateChart(message, equipmentData);
-    console.log('📊 Chart generated:', { hasChart: !!chart, type: chart?.type });
+    console.log('Chart generated:', { hasChart: !!chart, type: chart?.type });
   }
   
   // Analyze equipment data for response
@@ -239,7 +239,7 @@ async function generateResponse(message: string, supabase: any, apiKey?: string,
 
 #### Current Equipment Data Overview
 • **Total Downtime Events**: ${downLogs.length}
-• **Total Downtime Duration**: ${totalDowntime} minutes (${Math.round(totalDowntime/60)} hours and ${totalDowntime%60} minutes)
+• **Total Downtime Duration**: ${totalDowntime} minutes (${Math.floor(totalDowntime/60)} hours and ${totalDowntime%60} minutes)
 • **Equipment Monitored**: ${uniqueEquipment.length} machines
 • **System Availability**: ${availability.toFixed(1)}%
 
@@ -268,15 +268,15 @@ ${Object.entries(failureReasons)
 
 #### Industry Benchmarks
 
-• **World-Class OEE**: 85%+ availability target
+• **World-Class OEE**: 85% minimum availability target
 • **Current Performance**: ${availability.toFixed(1)}% availability
-• **Improvement Potential**: ${Math.max(0, 85 - availability).toFixed(1)}% points to reach world-class level`;
+• **Improvement Potential**: ${Math.max(0, 85 - availability).toFixed(1)} percentage points to reach world-class level`;
     } else {
       responseText = `**Manufacturing Analysis: Pareto Chart Request**
 
 #### Current Data Status
 
-⚠️  **Issue Identified**: No specific failure reasons available in current dataset
+**Issue Identified**: No specific failure reasons available in current dataset
 
 #### Available Data Summary
 • **Total Downtime Events**: ${downLogs.length}
@@ -300,17 +300,17 @@ All downtime records show generic reasons ("-" or empty). For meaningful Pareto 
 • Performance trend analysis
 • Overall system effectiveness metrics
 
-🔧 **Next Step**: Update data collection processes to capture specific failure reasons for comprehensive root cause analysis.`;
+**Next Step**: Update data collection processes to capture specific failure reasons for comprehensive root cause analysis.`;
     }
   } else {
     // General equipment analysis response
     responseText = `**Equipment Performance Analysis**
 
 #### System Overview
-• **Overall Availability**: ${availability.toFixed(1)}% ${availability >= 85 ? '✅ Excellent' : availability >= 70 ? '⚠️ Good' : '🔴 Needs Improvement'}
+• **Overall Availability**: ${availability.toFixed(1)}% ${availability >= 85 ? 'EXCELLENT' : availability >= 70 ? 'GOOD' : 'NEEDS IMPROVEMENT'}
 • **Equipment Monitored**: ${uniqueEquipment.length} machines
 • **Data Points Analyzed**: ${equipmentData.length} operational logs
-• **Total Runtime**: ${totalRuntime} minutes (${Math.round(totalRuntime/60)} hours)
+• **Total Runtime**: ${totalRuntime} minutes (${Math.floor(totalRuntime/60)} hours)
 • **Total Downtime**: ${totalDowntime} minutes (${downLogs.length} incidents)
 
 #### Equipment Performance Rankings
@@ -320,17 +320,17 @@ ${equipmentAnalysis.map((equip, i) =>
 ).join('\n')}
 
 #### Industry Benchmarks
-• **World-Class OEE**: 85%+ availability required
+• **World-Class OEE**: 85% minimum availability required
 • **Your Performance**: ${availability >= 85 ? 'Excellent - exceeds industry standards' : availability >= 70 ? 'Good - room for improvement to reach world-class' : 'Below target - significant improvement opportunity'}
 
 #### Recommended Actions
 • **Priority Equipment**: Focus on ${equipmentAnalysis[0]?.name} (lowest availability at ${equipmentAnalysis[0]?.availability.toFixed(1)}%)
-• **Performance Target**: Aim for 85%+ availability across all equipment
+• **Performance Target**: Aim for 85% minimum availability across all equipment
 • **Data Quality**: Ensure specific failure reasons are captured for root cause analysis
 
 **Analysis based on your question**: "${message}"
 
-${chart ? '\n📊 **Interactive Chart**: Visual analysis is displayed above showing the requested data breakdown.' : ''}`;
+${chart ? '\n**Interactive Chart**: Visual analysis is displayed above showing the requested data breakdown.' : ''}`;
   }
   
   return {
@@ -342,18 +342,18 @@ ${chart ? '\n📊 **Interactive Chart**: Visual analysis is displayed above show
 // Generate charts based on request type
 async function generateChart(query: string, equipmentData: any[]): Promise<ChartData | undefined> {
   if (!equipmentData || equipmentData.length === 0) {
-    console.log('📊 No equipment data available for chart');
+    console.log('No equipment data available for chart');
     return undefined;
   }
   
   const lowerQuery = query.toLowerCase();
-  console.log('📊 Processing chart request:', lowerQuery);
+  console.log('Processing chart request:', lowerQuery);
   
   const uniqueEquipment = [...new Set(equipmentData.map((log: any) => log.equipment_name))];
   
   // Pareto Chart for Failure Reasons
   if (lowerQuery.includes('pareto') || lowerQuery.includes('cause') || lowerQuery.includes('reason')) {
-    console.log('📊 Creating Pareto chart...');
+    console.log('Creating Pareto chart...');
     
     const reasonCounts: { [key: string]: number } = {};
     equipmentData.forEach((log: any) => {
@@ -366,10 +366,10 @@ async function generateChart(query: string, equipmentData: any[]): Promise<Chart
     const labels = Object.keys(reasonCounts);
     const data = Object.values(reasonCounts);
     
-    console.log('📊 Pareto data:', { labels, data, totalReasons: labels.length });
+    console.log('Pareto data:', { labels, data, totalReasons: labels.length });
     
     if (labels.length === 0) {
-      console.log('📊 No failure reasons found, creating empty Pareto chart');
+      console.log('No failure reasons found, creating empty Pareto chart');
       return {
         type: 'bar',
         title: 'Failure Reasons Analysis - No Specific Data Available',
@@ -400,7 +400,7 @@ async function generateChart(query: string, equipmentData: any[]): Promise<Chart
   
   // Equipment Availability Chart
   if (lowerQuery.includes('availability') || lowerQuery.includes('uptime') || lowerQuery.includes('equipment')) {
-    console.log('📊 Creating availability chart...');
+    console.log('Creating availability chart...');
     
     const availabilityData = uniqueEquipment.map(name => {
       const equipLogs = equipmentData.filter((log: any) => log.equipment_name === name);
@@ -438,7 +438,7 @@ async function generateChart(query: string, equipmentData: any[]): Promise<Chart
   
   // Downtime by Equipment
   if (lowerQuery.includes('downtime')) {
-    console.log('📊 Creating downtime chart...');
+    console.log('Creating downtime chart...');
     
     const downtimeData = uniqueEquipment.map(name => {
       return equipmentData.filter((log: any) => 
@@ -465,7 +465,7 @@ async function generateChart(query: string, equipmentData: any[]): Promise<Chart
     };
   }
   
-  console.log('📊 No specific chart type detected, defaulting to availability');
+  console.log('No specific chart type detected, defaulting to availability');
   
   // Default: Equipment availability
   const availabilityData = uniqueEquipment.map(name => {

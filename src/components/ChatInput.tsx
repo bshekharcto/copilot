@@ -41,7 +41,6 @@ export function ChatInput({ onSendMessage, isLoading, onSuggestedPrompt }: ChatI
       {showSuggestions && (
         <div className="mb-4 p-3 rounded-lg" style={{ backgroundColor: '#E8F2FF' }}>
           <div className="flex items-center gap-2 mb-2">
-            <Lightbulb className="w-4 h-4" style={{ color: '#1955AE' }} />
             <span className="text-sm font-medium" style={{ color: '#1955AE' }}>Suggested prompts:</span>
           </div>
           <div className="space-y-1">
@@ -70,7 +69,7 @@ export function ChatInput({ onSendMessage, isLoading, onSuggestedPrompt }: ChatI
           }`}
           title="Show suggested prompts"
         >
-          <Lightbulb className="w-5 h-5" />
+          <span className="text-xs font-semibold">?</span>
         </button>
 
         <div className="flex-1 relative">
