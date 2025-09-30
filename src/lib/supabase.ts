@@ -30,10 +30,25 @@ export type ChatSession = {
   updated_at: string
 }
 
+export type ChartData = {
+  type: 'bar' | 'line' | 'pie' | 'doughnut' | 'pareto'
+  title: string
+  labels: string[]
+  datasets: {
+    label: string
+    data: number[]
+    backgroundColor?: string | string[]
+    borderColor?: string | string[]
+    borderWidth?: number
+    fill?: boolean
+  }[]
+}
+
 export type ChatMessage = {
   id: string
   session_id: string
   role: 'user' | 'assistant'
   content: string
   timestamp: string
+  chart?: ChartData
 }

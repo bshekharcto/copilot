@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { supabase, ChatSession, ChatMessage } from '../lib/supabase'
+import { supabase, ChatSession, ChatMessage, ChartData } from '../lib/supabase'
 
 export function useChat() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [messageCharts, setMessageCharts] = useState<{[messageId: string]: ChartData}>({})
 
   useEffect(() => {
     loadSessions()
@@ -42,7 +43,12 @@ export function useChat() {
     if (error) {
       console.error('Error loading messages:', error)
     } else {
-      setMessages(data || [])
+      // Enhance messages with chart data
+      const messagesWithCharts = (data || []).map(message => ({
+        ...message,
+        chart: messageCharts[message.id]
+      }))
+      setMessages(messagesWithCharts)
     }
   }
 
@@ -89,8 +95,31 @@ export function useChat() {
       // The Edge Function will save both user and assistant messages
       const aiResponse = await generateLangChainResponse(content, currentSession!.id)
 
-      // Reload messages to get the latest ones from the Edge Function
-      await loadMessages(currentSession!.id)
+      // Store chart data if present
+      if (typeof aiResponse === 'object' && aiResponse.chart) {
+        // We'll need to get the latest message ID after reloading
+        await loadMessages(currentSession!.id)
+
+        // Find the most recent assistant message and associate the chart with it
+        const updatedMessages = await supabase
+          .from('chat_messages')
+          .select('*')
+          .eq('session_id', currentSession!.id)
+          .eq('role', 'assistant')
+          .order('timestamp', { ascending: false })
+          .limit(1)
+
+        if (updatedMessages.data && updatedMessages.data.length > 0) {
+          const messageId = updatedMessages.data[0].id
+          setMessageCharts(prev => ({
+            ...prev,
+            [messageId]: aiResponse.chart
+          }))
+        }
+      } else {
+        // Reload messages to get the latest ones from the Edge Function
+        await loadMessages(currentSession!.id)
+      }
 
       // Update session timestamp
       await supabase
@@ -166,8 +195,11 @@ async function generateLangChainResponse(userMessage: string, sessionId: string)
       throw new Error(data.error);
     }
 
-    console.log('🎉 Returning AI response');
-    return data.response;
+    console.log('🎉 Returning AI response', { hasChart: !!data.chart });
+    return {
+      text: data.response,
+      chart: data.chart
+    };
   } catch (error) {
     console.error('❌ Error calling Edge Function:', error);
     console.error('❌ Error details:', {
@@ -177,7 +209,8 @@ async function generateLangChainResponse(userMessage: string, sessionId: string)
     });
 
     // Fallback to basic response if Edge Function fails
-    return `🔧 **Debug Mode Active** - Edge Function Error Detected
+    return {
+      text: `🔧 **Debug Mode Active** - Edge Function Error Detected
 
 **Error Details**: ${error.message}
 
@@ -194,6 +227,8 @@ async function generateLangChainResponse(userMessage: string, sessionId: string)
 - Session: ${sessionId}
 - Message: "${userMessage}"
 
-Please check the browser console for detailed error logs or contact support.`;
+Please check the browser console for detailed error logs or contact support.`,
+      chart: undefined
+    };
   }
 }

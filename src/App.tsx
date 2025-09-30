@@ -75,10 +75,10 @@ function App() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
                   {[
-                    "Show me availability analysis for all equipment",
-                    "What are the main downtime causes?",
-                    "Which equipment needs immediate attention?",
-                    "Generate an OEE summary report"
+                    "Show me a chart of equipment availability",
+                    "Plot downtime by equipment",
+                    "Create a Pareto chart of failure reasons",
+                    "Visualize equipment performance comparison"
                   ].map((prompt, index) => (
                     <button
                       key={index}

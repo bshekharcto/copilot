@@ -45,6 +45,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
   }
 
   const parsedContent = parseMessageContent(message.content)
+  const hasDirectChart = message.chart && !isUser // Only assistant messages can have charts
 
   return (
     <div className={`flex gap-4 p-4 ${isUser ? 'bg-gray-50' : 'bg-white'}`}>
@@ -63,7 +64,12 @@ export function ChatMessage({ message }: ChatMessageProps) {
           {isUser ? 'You' : 'OEE Assistant'}
         </div>
 
-        {parsedContent.hasChart ? (
+        {hasDirectChart ? (
+          <div className="space-y-4">
+            <div className="text-gray-700 whitespace-pre-wrap">{message.content}</div>
+            <Chart chartData={message.chart!} />
+          </div>
+        ) : parsedContent.hasChart ? (
           <div className="space-y-4">
             {parsedContent.textBefore && (
               <div className="text-gray-700 whitespace-pre-wrap">{parsedContent.textBefore}</div>
@@ -76,7 +82,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
             )}
           </div>
         ) : (
-          <div className="text-gray-700 whitespace-pre-wrap">{parsedContent.text}</div>
+          <div className="text-gray-700 whitespace-pre-wrap">{parsedContent.text || message.content}</div>
         )}
 
         <div className="text-xs text-gray-500 mt-2">

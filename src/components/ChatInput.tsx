@@ -8,14 +8,14 @@ interface ChatInputProps {
 }
 
 const SUGGESTED_PROMPTS = [
-  "Show me availability analysis for all equipment",
-  "What are the main downtime causes across my machines?",
-  "Which equipment needs immediate attention?",
-  "Analyze recent alerts and critical issues",
+  "Show me a chart of equipment availability",
+  "Plot downtime trends over time",
+  "Create a Pareto chart of failure reasons",
+  "Visualize equipment performance comparison",
   "Show me performance trends for Machine A vs Machine B",
   "What caused the longest downtime incident?",
-  "Generate an OEE summary report",
-  "How can I reduce maintenance-related downtime?"
+  "Generate an OEE summary report with charts",
+  "Chart the top downtime causes"
 ]
 
 export function ChatInput({ onSendMessage, isLoading, onSuggestedPrompt }: ChatInputProps) {
