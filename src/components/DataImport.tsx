@@ -81,14 +81,39 @@ export function DataImport({ onClose, onImportComplete }: DataImportProps) {
 
         // Parse timestamp into date and time components
         const timestampStr = log.timestamp || log.time || log.date || log.datetime || new Date().toISOString()
-        const timestamp = new Date(timestampStr)
-        const dateStr = timestamp.toISOString().split('T')[0] // YYYY-MM-DD
-        const timeStr = timestamp.toTimeString().split(' ')[0] // HH:MM:SS
+        let dateStr, timeStr
+
+        try {
+          if (log.date && !log.timestamp && !log.time && !log.datetime) {
+            // If only date is provided, use it directly
+            dateStr = log.date
+            timeStr = log.start_time || '00:00:00'
+          } else {
+            const timestamp = new Date(timestampStr)
+            if (isNaN(timestamp.getTime())) {
+              throw new Error(`Invalid timestamp: ${timestampStr}`)
+            }
+            dateStr = timestamp.toISOString().split('T')[0] // YYYY-MM-DD
+            timeStr = timestamp.toTimeString().split(' ')[0] // HH:MM:SS
+          }
+        } catch (error) {
+          console.warn(`Failed to parse timestamp "${timestampStr}":`, error)
+          dateStr = new Date().toISOString().split('T')[0]
+          timeStr = '00:00:00'
+        }
+
+        const equipmentName = log.equipment_name || log.equipment || log.machine || log.machine_name || log.equipment_id
+        const status = log.status || log.state || log.status_code
+
+        if (!equipmentName || !status) {
+          console.warn('Skipping row with missing equipment name or status:', log)
+          return null
+        }
 
         return {
-          equipment_name: log.equipment_name || log.equipment || log.machine || log.machine_name || log.equipment_id || `Equipment_${Math.random().toString(36).substr(2, 9)}`,
-          status: log.status || log.state || log.status_code || 'unknown',
-          date: log.date || dateStr,
+          equipment_name: equipmentName,
+          status: status,
+          date: dateStr,
           start_time: log.start_time || timeStr,
           end_time: log.end_time || undefined,
           duration_minutes: parseInt(log.duration_minutes || log.duration || log.downtime_duration || '0') || 0,
@@ -97,7 +122,7 @@ export function DataImport({ onClose, onImportComplete }: DataImportProps) {
           alert: log.alert || log.alarm || log.notification || log.alert_type || undefined,
           comment: log.comment || log.notes || undefined
         }
-      }).filter(log => log.equipment_name && log.status) // Filter out invalid rows
+      }).filter(log => log !== null && log.equipment_name && log.status) // Filter out invalid rows
 
       setPreviewData(equipmentLogs.slice(0, 5)) // Show first 5 rows as preview
       setUploadStatus('success')
@@ -113,7 +138,7 @@ export function DataImport({ onClose, onImportComplete }: DataImportProps) {
 
     } catch (error) {
       console.error('Error processing CSV file:', error)
-      setErrorMessage('Error processing CSV file. Please check the file format.')
+      setErrorMessage(`Error processing CSV file: ${error instanceof Error ? error.message : 'Unknown error'}. Please check the file format.`)
       setUploadStatus('error')
     } finally {
       setIsUploading(false)
@@ -135,7 +160,8 @@ export function DataImport({ onClose, onImportComplete }: DataImportProps) {
 
         if (error) {
           console.error('Error inserting batch:', error)
-          throw error
+          console.error('Batch data:', batch)
+          throw new Error(`Database insert error: ${error.message}`)
         }
       }
 
@@ -160,7 +186,7 @@ export function DataImport({ onClose, onImportComplete }: DataImportProps) {
       onImportComplete()
     } catch (error) {
       console.error('Error importing to database:', error)
-      setErrorMessage('Error importing data to database. Please try again.')
+      setErrorMessage(`Error importing data to database: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`)
       setUploadStatus('error')
     }
   }
