@@ -6,7 +6,6 @@ export function useChat() {
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [openaiApiKey, setOpenaiApiKey] = useState<string | null>(null)
 
   useEffect(() => {
     loadSessions()
@@ -86,9 +85,9 @@ export function useChat() {
     setIsLoading(true)
 
     try {
-      // Generate AI response using LangChain Edge Function
+      // Generate AI response using Edge Function
       // The Edge Function will save both user and assistant messages
-      const aiResponse = await generateLangChainResponse(content, currentSession!.id, openaiApiKey)
+      const aiResponse = await generateLangChainResponse(content, currentSession!.id)
 
       // Reload messages to get the latest ones from the Edge Function
       await loadMessages(currentSession!.id)
@@ -124,13 +123,12 @@ export function useChat() {
     sendMessage,
     selectSession,
     startNewChat,
-    loadSessions,
-    setOpenaiApiKey
+    loadSessions
   }
 }
 
-// Generate AI responses using LangChain Edge Function
-async function generateLangChainResponse(userMessage: string, sessionId: string, openaiApiKey?: string | null): Promise<string> {
+// Generate AI responses using Edge Function
+async function generateLangChainResponse(userMessage: string, sessionId: string): Promise<string> {
   console.log('🚀 Calling Edge Function with:', { userMessage, sessionId });
   console.log('🌐 Edge Function URL:', `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oee-chat`);
 
@@ -143,8 +141,7 @@ async function generateLangChainResponse(userMessage: string, sessionId: string,
       },
       body: JSON.stringify({
         message: userMessage,
-        sessionId: sessionId,
-        ...(openaiApiKey && { openaiApiKey })
+        sessionId: sessionId
       })
     });
 

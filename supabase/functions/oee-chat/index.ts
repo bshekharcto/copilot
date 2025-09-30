@@ -10,7 +10,6 @@ const corsHeaders = {
 interface ChatRequest {
   message: string;
   sessionId: string;
-  openaiApiKey?: string;
 }
 
 Deno.serve(async (req: Request) => {
@@ -22,8 +21,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { message, sessionId, openaiApiKey }: ChatRequest = await req.json();
-    console.log('🚀 OEE Chat request:', { message: message.substring(0, 50), sessionId, hasApiKey: !!openaiApiKey });
+    const { message, sessionId }: ChatRequest = await req.json();
+    console.log('🚀 OEE Chat request:', { message: message.substring(0, 50), sessionId });
 
     // Initialize Supabase client
     const supabase = createClient(
@@ -46,16 +45,15 @@ Deno.serve(async (req: Request) => {
     }
     console.log('✅ User message saved');
 
-    // Get API key (prioritize request parameter for testing)
-    let apiKey = openaiApiKey || Deno.env.get('OPENAI_API_KEY');
+    // Get API key from environment
+    const apiKey = Deno.env.get('OPENAI_API_KEY');
     
     console.log('🔑 API Key status:', {
-      fromRequest: !!openaiApiKey,
-      fromEnv: !!Deno.env.get('OPENAI_API_KEY'),
-      hasValidKey: apiKey ? apiKey.startsWith('sk-') && apiKey.length > 20 : false
+      hasKey: !!apiKey,
+      isValid: apiKey ? apiKey.startsWith('sk-') && apiKey.length > 20 : false
     });
     
-    // If we have a valid OpenAI key, try AI response
+    // If we have a valid OpenAI key, use AI response
     if (apiKey && apiKey.startsWith('sk-') && apiKey.length > 20) {
       try {
         console.log('🤖 Generating AI response...');
@@ -92,8 +90,8 @@ Deno.serve(async (req: Request) => {
     }
     
     // Fallback: Use analytics mode
-    console.log('📊 Using analytics fallback...');
-    const response = await generateAnalyticsResponse(message, supabase, !!apiKey);
+    console.log('📊 Using analytics fallback (no API key configured)...');
+    const response = await generateAnalyticsResponse(message, supabase);
     
     await supabase
       .from('chat_messages')
@@ -106,7 +104,7 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({ 
         response,
-        debug: { mode: 'analytics_fallback' }
+        debug: { mode: 'analytics_fallback_no_key' }
       }),
       {
         headers: {
@@ -134,7 +132,7 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-// Generate AI response using direct OpenAI API (no LangChain)
+// Generate AI response using direct OpenAI API
 async function generateAIResponse(message: string, supabase: any, apiKey: string): Promise<string> {
   try {
     // Get equipment data for context
@@ -169,7 +167,7 @@ Format your response with clear sections and bullet points. Be direct and action
 
 Response:`;
     
-    console.log('🤖 Calling OpenAI API directly...');
+    console.log('🤖 Calling OpenAI API...');
     
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -217,7 +215,7 @@ Response:`;
 }
 
 // Generate analytics response without AI
-async function generateAnalyticsResponse(message: string, supabase: any, hasApiKey: boolean): Promise<string> {
+async function generateAnalyticsResponse(message: string, supabase: any): Promise<string> {
   const { data: equipmentData } = await supabase
     .from('equipment_status_logs')
     .select('*')
@@ -227,7 +225,7 @@ async function generateAnalyticsResponse(message: string, supabase: any, hasApiK
   if (!equipmentData || equipmentData.length === 0) {
     return `📊 **OEE Manufacturing Assistant**
 
-⚠️ **Current Status**: ${hasApiKey ? 'API key configured, but encountered integration issues' : 'OpenAI API key not configured'}
+⚠️ **Current Status**: OpenAI API key not configured in environment variables
 
 **Available Now:**
 • Basic manufacturing guidance
@@ -236,7 +234,7 @@ async function generateAnalyticsResponse(message: string, supabase: any, hasApiK
 • Equipment monitoring setup
 
 **To Enable AI Features:**
-1. ${hasApiKey ? 'AI integration is being troubleshooted' : 'Configure your OpenAI API key using the button on the main screen'}
+1. Configure OPENAI_API_KEY environment variable in Supabase Edge Functions
 2. Import your manufacturing data via the Data Import feature
 3. Ask questions about your equipment performance
 
@@ -246,7 +244,7 @@ async function generateAnalyticsResponse(message: string, supabase: any, hasApiK
 • "How do I reduce manufacturing downtime?"
 • "Show me availability analysis"
 
-${hasApiKey ? '🔧 **Status**: Working to resolve AI integration issues. Analytics mode active.' : '🚀 **Next Step**: Configure OpenAI API key for advanced insights.'}`;
+🚀 **Next Step**: Configure OPENAI_API_KEY environment variable for advanced AI-powered insights.`;
   }
   
   // Analyze equipment data
@@ -271,10 +269,10 @@ ${hasApiKey ? '🔧 **Status**: Working to resolve AI integration issues. Analyt
   
   return `📊 **Equipment Availability Analysis**
 
-${hasApiKey ? '🎯 **Mode**: Data Analytics (AI integration issues)' : '🎯 **Mode**: Data Analytics (AI integration issues)'}
+🎯 **Mode**: Data Analytics (OPENAI_API_KEY environment variable not configured)
 
 ## 📈 Current System Performance:
-• **Overall Availability**: ${availability.toFixed(1)}% ${availability >= 85 ? '✅ Needs Improvement' : availability >= 70 ? '⚠️ Needs Improvement' : '🔴 Needs Improvement'}
+• **Overall Availability**: ${availability.toFixed(1)}% ${availability >= 85 ? '✅ Excellent' : availability >= 70 ? '⚠️ Good' : '🔴 Needs Improvement'}
 • **Equipment Monitored**: ${uniqueEquipment.length} machines
 • **Active Data Points**: ${equipmentData.length} operational logs
 • **Total Runtime**: ${totalRuntime} minutes (${Math.round(totalRuntime/60)} hours)
@@ -289,7 +287,7 @@ ${equipmentAnalysis.map((equip, i) =>
 • **World-class OEE**: 85%+ (requires 90%+ availability)
 • **Your Current Level**: ${availability >= 85 ? 'Excellent' : availability >= 70 ? 'Good' : 'Improvement Needed'}
 
-## 💡 **Enable AI Features**: Set OPENAI_API_KEY environment variable for predictive insights and advanced recommendations.
+## 💡 **Enable AI Features**: Configure OPENAI_API_KEY environment variable in Supabase Edge Functions for predictive insights and advanced recommendations.
 
 **Based on your question**: "${message}"
 **Analysis**: Your system shows ${availability.toFixed(1)}% availability across ${uniqueEquipment.length} machines with ${totalDowntime} minutes of total downtime. ${equipmentAnalysis[0]?.name} needs immediate attention with only ${equipmentAnalysis[0]?.availability.toFixed(1)}% availability.`;
