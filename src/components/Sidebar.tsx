@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, MessageSquare, Settings, BarChart3, Trash2, CreditCard as Edit3, MoreHorizontal } from 'lucide-react'
+import { Plus, MessageSquare, Settings, BarChart3, Trash2, Edit3, Upload } from 'lucide-react'
 import { supabase, ChatSession } from '../lib/supabase'
 
 interface SidebarProps {
@@ -8,9 +8,10 @@ interface SidebarProps {
   onNewChat: () => void
   sessions: ChatSession[]
   onSessionsUpdate: () => void
+  onImportData: () => void
 }
 
-export function Sidebar({ currentSession, onSessionSelect, onNewChat, sessions, onSessionsUpdate }: SidebarProps) {
+export function Sidebar({ currentSession, onSessionSelect, onNewChat, sessions, onSessionsUpdate, onImportData }: SidebarProps) {
   const [hoveredSession, setHoveredSession] = useState<string | null>(null)
   const [editingSession, setEditingSession] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
@@ -196,7 +197,14 @@ export function Sidebar({ currentSession, onSessionSelect, onNewChat, sessions, 
         )}
       </div>
 
-      <div className="p-4 border-t border-gray-700">
+      <div className="p-4 border-t border-gray-700 space-y-2">
+        <button
+          onClick={onImportData}
+          className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-800 rounded-lg transition-colors text-gray-300"
+        >
+          <Upload className="w-4 h-4" />
+          <span className="text-sm">Import Data</span>
+        </button>
         <button className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-800 rounded-lg transition-colors text-gray-300">
           <Settings className="w-4 h-4" />
           <span className="text-sm">Settings</span>

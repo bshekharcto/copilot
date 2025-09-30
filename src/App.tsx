@@ -1,10 +1,12 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { ChatMessage } from './components/ChatMessage'
 import { ChatInput } from './components/ChatInput'
+import { DataImport } from './components/DataImport'
 import { useChat } from './hooks/useChat'
 
 function App() {
+  const [showDataImport, setShowDataImport] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const {
     sessions,
@@ -33,6 +35,11 @@ function App() {
     startNewChat()
   }
 
+  const handleImportComplete = () => {
+    setShowDataImport(false)
+    // Optionally refresh any data or show a success message
+  }
+
   return (
     <div className="flex h-screen bg-white">
       <Sidebar
@@ -41,6 +48,7 @@ function App() {
         onNewChat={handleNewChat}
         sessions={sessions}
         onSessionsUpdate={loadSessions}
+        onImportData={() => setShowDataImport(true)}
       />
 
       <div className="flex-1 flex flex-col">
@@ -124,6 +132,13 @@ function App() {
           isLoading={isLoading}
         />
       </div>
+
+      {showDataImport && (
+        <DataImport
+          onClose={() => setShowDataImport(false)}
+          onImportComplete={handleImportComplete}
+        />
+      )}
     </div>
   )
 }
