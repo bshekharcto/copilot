@@ -135,7 +135,7 @@ async function generateLangChainResponse(userMessage: string, sessionId: string,
   console.log('🌐 Edge Function URL:', `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oee-chat`);
 
   try {
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oee-chat-test`, {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oee-chat-debug`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
