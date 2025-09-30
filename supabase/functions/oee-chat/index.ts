@@ -10,6 +10,7 @@ const corsHeaders = {
 interface ChatRequest {
   message: string;
   sessionId: string;
+  openaiApiKey?: string;
 }
 
 Deno.serve(async (req: Request) => {
@@ -21,8 +22,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { message, sessionId }: ChatRequest = await req.json();
-    console.log('🚀 Received chat request:', { message, sessionId });
+    const { message, sessionId, openaiApiKey }: ChatRequest = await req.json();
+    console.log('🚀 OEE Chat request:', { message: message.substring(0, 50), sessionId, hasApiKey: !!openaiApiKey });
 
     // Initialize Supabase client
     const supabase = createClient(
@@ -45,20 +46,20 @@ Deno.serve(async (req: Request) => {
     }
     console.log('✅ User message saved');
 
-    // Check for OpenAI API key (only one standard variable)
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+    // Get API key (prioritize request parameter for testing)
+    let apiKey = openaiApiKey || Deno.env.get('OPENAI_API_KEY');
     
-    console.log('🔑 OpenAI API key status:', {
-      exists: !!openaiApiKey,
-      length: openaiApiKey ? openaiApiKey.length : 0,
-      isValid: openaiApiKey ? openaiApiKey.startsWith('sk-') : false
+    console.log('🔑 API Key status:', {
+      fromRequest: !!openaiApiKey,
+      fromEnv: !!Deno.env.get('OPENAI_API_KEY'),
+      hasValidKey: apiKey ? apiKey.startsWith('sk-') && apiKey.length > 20 : false
     });
     
-    // If we have a valid OpenAI key, use LangChain
-    if (openaiApiKey && openaiApiKey.startsWith('sk-')) {
+    // If we have a valid OpenAI key, try AI response
+    if (apiKey && apiKey.startsWith('sk-') && apiKey.length > 20) {
       try {
-        console.log('🤖 Using LangChain with OpenAI...');
-        const response = await generateAIResponse(message, supabase, openaiApiKey);
+        console.log('🤖 Generating AI response...');
+        const response = await generateAIResponse(message, supabase, apiKey);
         
         // Save assistant response
         await supabase
@@ -69,12 +70,12 @@ Deno.serve(async (req: Request) => {
             content: response,
           });
         
-        console.log('✅ AI response generated and saved');
+        console.log('✅ AI response generated successfully');
         
         return new Response(
           JSON.stringify({ 
             response,
-            debug: { mode: 'ai_powered' }
+            debug: { mode: 'ai_powered_success' }
           }),
           {
             headers: {
@@ -85,16 +86,15 @@ Deno.serve(async (req: Request) => {
         );
         
       } catch (aiError) {
-        console.error('❌ LangChain error:', aiError);
-        // Fall through to intelligent fallback
+        console.error('❌ AI generation failed:', aiError.message);
+        // Fall through to fallback
       }
     }
     
-    // Fallback: Generate intelligent response without AI
-    console.log('📊 Using intelligent fallback...');
-    const response = await generateIntelligentFallback(message, supabase, !!openaiApiKey);
+    // Fallback: Use analytics mode
+    console.log('📊 Using analytics fallback...');
+    const response = await generateAnalyticsResponse(message, supabase, !!apiKey);
     
-    // Save assistant response
     await supabase
       .from('chat_messages')
       .insert({
@@ -117,10 +117,10 @@ Deno.serve(async (req: Request) => {
     );
 
   } catch (error) {
-    console.error('❌ Error in OEE Chat function:', error);
+    console.error('❌ Function error:', error);
     return new Response(
       JSON.stringify({ 
-        error: 'Failed to process chat request',
+        error: 'Function execution failed',
         details: error.message
       }),
       {
@@ -134,77 +134,90 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-// Generate AI response using LangChain
+// Generate AI response using direct OpenAI API (no LangChain)
 async function generateAIResponse(message: string, supabase: any, apiKey: string): Promise<string> {
-  const { ChatOpenAI } = await import("npm:@langchain/openai@0.2.6");
-  const { PromptTemplate } = await import("npm:langchain@0.2.16/prompts");
-  const { RunnableSequence } = await import("npm:@langchain/core@0.2.28/runnables");
-  const { StringOutputParser } = await import("npm:@langchain/core@0.2.28/output_parsers");
-  
-  // Get equipment data for context
-  const { data: equipmentData } = await supabase
-    .from('equipment_status_logs')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(50);
+  try {
+    // Get equipment data for context
+    const { data: equipmentData } = await supabase
+      .from('equipment_status_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(30);
+      
+    console.log(`📊 Retrieved ${equipmentData?.length || 0} equipment records`);
+      
+    const equipmentContext = equipmentData && equipmentData.length > 0 ? 
+      `Recent Equipment Data (${equipmentData.length} records):\n${equipmentData.slice(0, 8).map((log: any) => 
+        `- ${log.equipment_name}: ${log.status} on ${log.date} (${log.duration_minutes}min${log.reason ? `, Reason: ${log.reason}` : ''})`
+      ).join('\n')}` : 'No recent equipment data available';
     
-  const equipmentSummary = equipmentData && equipmentData.length > 0 ? 
-    `Recent Equipment Status (${equipmentData.length} records):\n${equipmentData.slice(0, 15).map((log: any) => 
-      `- ${log.equipment_name}: ${log.status} on ${log.date} (${log.duration_minutes}min${log.reason ? `, Reason: ${log.reason}` : ''})`
-    ).join('\n')}` : 'No equipment data available';
-  
-  // Initialize OpenAI
-  const llm = new ChatOpenAI({
-    openAIApiKey: apiKey,
-    modelName: "gpt-4o-mini",
-    temperature: 0.3,
-    maxTokens: 1000,
-  });
-  
-  const promptTemplate = PromptTemplate.fromTemplate(`
-You are an expert OEE (Overall Equipment Effectiveness) Manufacturing Copilot with deep knowledge of:
-- Manufacturing operations and equipment management
-- OEE calculations (Availability × Performance × Quality)
-- Predictive maintenance and downtime reduction 
-- Production efficiency and quality improvement
-- Root cause analysis and problem solving
-- Industry benchmarks (World-class OEE: 85%+)
+    const prompt = `You are an expert OEE (Overall Equipment Effectiveness) Manufacturing Copilot.
 
-Current Equipment Data:
-{equipmentSummary}
+Current Equipment Status:
+${equipmentContext}
 
-User Question: {question}
+User Question: ${message}
 
 Provide a comprehensive manufacturing analysis that:
 1. Uses the actual equipment data when relevant
 2. Offers specific, actionable recommendations
-3. Identifies patterns and improvement opportunities  
+3. Identifies patterns and improvement opportunities
 4. Suggests concrete next steps
-5. References industry benchmarks and best practices
-6. Uses professional manufacturing terminology
+5. References industry benchmarks (World-class OEE: 85%+)
 
-Format your response with clear sections and bullet points for readability.
+Format your response with clear sections and bullet points. Be direct and actionable.
 
-Response:
-`);
-  
-  const chain = RunnableSequence.from([
-    promptTemplate,
-    llm,
-    new StringOutputParser(),
-  ]);
-  
-  return await chain.invoke({
-    question: message,
-    equipmentSummary,
-  });
+Response:`;
+    
+    console.log('🤖 Calling OpenAI API directly...');
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert OEE Manufacturing Copilot providing actionable insights based on real equipment data.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        max_tokens: 1000,
+        temperature: 0.3
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error('❌ OpenAI API error:', response.status, errorData);
+      throw new Error(`OpenAI API Error: ${response.status} - ${errorData}`);
+    }
+    
+    const data = await response.json();
+    const aiResponse = data.choices[0]?.message?.content;
+    
+    if (!aiResponse) {
+      throw new Error('No response from OpenAI');
+    }
+    
+    console.log('✅ OpenAI response received');
+    return `🤖 **AI-Powered OEE Analysis**\n\n${aiResponse}`;
+    
+  } catch (error) {
+    console.error('❌ AI Response Error:', error.message);
+    throw error;
+  }
 }
 
-// Generate intelligent response without AI
-async function generateIntelligentFallback(message: string, supabase: any, keyExists: boolean): Promise<string> {
-  const userMessage = message.toLowerCase();
-  
-  // Get equipment data
+// Generate analytics response without AI
+async function generateAnalyticsResponse(message: string, supabase: any, hasApiKey: boolean): Promise<string> {
   const { data: equipmentData } = await supabase
     .from('equipment_status_logs')
     .select('*')
@@ -212,32 +225,31 @@ async function generateIntelligentFallback(message: string, supabase: any, keyEx
     .limit(100);
     
   if (!equipmentData || equipmentData.length === 0) {
-    return `📊 **OEE Manufacturing Copilot**
+    return `📊 **OEE Manufacturing Assistant**
 
-⚠️ **Status**: ${keyExists ? 'OpenAI key found but not working' : 'OpenAI API key not configured'}
+⚠️ **Current Status**: ${hasApiKey ? 'API key configured, but encountered integration issues' : 'OpenAI API key not configured'}
 
-**Current Situation:**
-• ${keyExists ? 'OpenAI integration encountering issues' : 'OPENAI_API_KEY environment variable not set'}
-• No equipment data available for analysis
+**Available Now:**
+• Basic manufacturing guidance
+• OEE calculation formulas
+• Industry best practices
+• Equipment monitoring setup
 
-**To Enable Full AI Capabilities:**
-1. **Configure OPENAI_API_KEY** in Supabase Edge Function environment
-2. **Import Equipment Data** using the Data Import tab
-3. **Test the chat** to verify AI integration
+**To Enable AI Features:**
+1. ${hasApiKey ? 'AI integration is being troubleshooted' : 'Configure your OpenAI API key using the button on the main screen'}
+2. Import your manufacturing data via the Data Import feature
+3. Ask questions about your equipment performance
 
-**What I can provide without AI:**
-• Basic equipment data analysis
-• OEE calculation assistance  
-• Manufacturing best practices
-• Industry benchmarks
+**Sample Questions:**
+• "Calculate OEE for [equipment name]"
+• "What is world-class OEE performance?"
+• "How do I reduce manufacturing downtime?"
+• "Show me availability analysis"
 
-**Next Steps:**
-1. Set the OPENAI_API_KEY environment variable with your OpenAI API key
-2. Upload your manufacturing data via the Data Import feature
-3. Once configured, I'll provide advanced AI-powered insights`;
+${hasApiKey ? '🔧 **Status**: Working to resolve AI integration issues. Analytics mode active.' : '🚀 **Next Step**: Configure OpenAI API key for advanced insights.'}`;
   }
   
-  // Basic analytics
+  // Analyze equipment data
   const uniqueEquipment = [...new Set(equipmentData.map((log: any) => log.equipment_name))];
   const downLogs = equipmentData.filter((log: any) => log.status?.toLowerCase() === 'down');
   const runningLogs = equipmentData.filter((log: any) => log.status?.toLowerCase() === 'running');
@@ -245,66 +257,40 @@ async function generateIntelligentFallback(message: string, supabase: any, keyEx
   const totalRuntime = runningLogs.reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
   const availability = totalRuntime + totalDowntime > 0 ? (totalRuntime / (totalRuntime + totalDowntime) * 100) : 0;
   
-  if (userMessage.includes('availability') || userMessage.includes('uptime')) {
-    return `📈 **Equipment Availability Analysis**
+  // Equipment-specific analysis
+  const equipmentAnalysis = uniqueEquipment.slice(0, 5).map(name => {
+    const equipLogs = equipmentData.filter((log: any) => log.equipment_name === name);
+    const equipDowntime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'down')
+      .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
+    const equipRuntime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'running')
+      .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
+    const equipAvailability = equipRuntime + equipDowntime > 0 ? (equipRuntime / (equipRuntime + equipDowntime) * 100) : 0;
+    
+    return { name, availability: equipAvailability, downtime: equipDowntime, incidents: equipLogs.filter((log: any) => log.status?.toLowerCase() === 'down').length };
+  }).sort((a, b) => a.availability - b.availability);
+  
+  return `📊 **Equipment Availability Analysis**
 
-⚠️ **Mode**: Data Analytics ${keyExists ? '(AI integration issues)' : '(OpenAI key needed)'}
+${hasApiKey ? '🎯 **Mode**: Data Analytics (AI integration issues)' : '🎯 **Mode**: Data Analytics (AI integration issues)'}
 
-## Current System Performance:
-• **Overall Availability**: ${availability.toFixed(1)}% ${availability >= 90 ? '✅ Excellent' : availability >= 80 ? '⚠️ Good' : '🔴 Needs Improvement'}
+## 📈 Current System Performance:
+• **Overall Availability**: ${availability.toFixed(1)}% ${availability >= 85 ? '✅ Needs Improvement' : availability >= 70 ? '⚠️ Needs Improvement' : '🔴 Needs Improvement'}
 • **Equipment Monitored**: ${uniqueEquipment.length} machines
-• **Active Equipment**: ${uniqueEquipment.join(', ')}
-• **Total Runtime**: ${totalRuntime} minutes (${runningLogs.length} sessions)
+• **Active Data Points**: ${equipmentData.length} operational logs
+• **Total Runtime**: ${totalRuntime} minutes (${Math.round(totalRuntime/60)} hours)
 • **Total Downtime**: ${totalDowntime} minutes (${downLogs.length} incidents)
 
-## Equipment Rankings:
-${uniqueEquipment.map(equipment => {
-  const equipLogs = equipmentData.filter((log: any) => log.equipment_name === equipment);
-  const equipDowntime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'down')
-    .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
-  const equipRuntime = equipLogs.filter((log: any) => log.status?.toLowerCase() === 'running')
-    .reduce((sum: number, log: any) => sum + (log.duration_minutes || 0), 0);
-  const equipAvailability = equipRuntime + equipDowntime > 0 ? (equipRuntime / (equipRuntime + equipDowntime) * 100) : 0;
-  return `• **${equipment}**: ${equipAvailability.toFixed(1)}% availability (${equipDowntime}min downtime)`;
-}).join('\n')}
+## 🗐️ Equipment Rankings:
+${equipmentAnalysis.map((equip, i) => 
+  `• **${equip.name}**: ${equip.availability.toFixed(1)}% availability (${equip.downtime}min downtime)`
+).join('\n')}
 
-## Industry Benchmarks:
+## 🏆 Industry Benchmarks:
 • **World-class OEE**: 85%+ (requires 90%+ availability)
-• **Your Current Level**: ${availability >= 90 ? 'World-class' : availability >= 80 ? 'Above Average' : 'Improvement Needed'}
+• **Your Current Level**: ${availability >= 85 ? 'Excellent' : availability >= 70 ? 'Good' : 'Improvement Needed'}
 
-🎆 **Enable AI Features**: Set OPENAI_API_KEY environment variable for predictive insights and advanced recommendations.`;
-  }
-  
-  return `📊 **OEE Manufacturing Copilot** 
+## 💡 **Enable AI Features**: Set OPENAI_API_KEY environment variable for predictive insights and advanced recommendations.
 
-⚠️ **Current Mode**: Advanced Data Analytics
-🎆 **AI Enhancement**: ${keyExists ? 'Key found but integration issues' : 'Requires OPENAI_API_KEY configuration'}
-
-## Your Manufacturing System:
-• **Equipment Monitored**: ${uniqueEquipment.length} machines (${uniqueEquipment.join(', ')})
-• **System Availability**: ${availability.toFixed(1)}% ${availability >= 85 ? '✅' : '🔴'}
-• **Data Records**: ${equipmentData.length} operational logs analyzed
-• **Recent Downtime**: ${downLogs.length} incidents (${totalDowntime} minutes)
-
-## What I Can Analyze:
-• **Equipment Availability** - Uptime/downtime performance
-• **OEE Calculations** - Industry benchmark comparisons  
-• **Downtime Analysis** - Pattern identification
-• **Performance Metrics** - Efficiency measurements
-
-## Available Commands:
-• "Show me availability analysis"
-• "Calculate OEE performance" 
-• "Which equipment needs attention?"
-• "Analyze downtime patterns"
-
-## 🎆 Enable Full AI Capabilities:
-**Set OPENAI_API_KEY environment variable** to unlock:
-• Predictive maintenance recommendations
-• Advanced root cause analysis
-• Personalized optimization strategies
-• Natural language insights
-• Automated problem diagnosis
-
-**Configuration Required**: OPENAI_API_KEY environment variable in Supabase Edge Function`;
+**Based on your question**: "${message}"
+**Analysis**: Your system shows ${availability.toFixed(1)}% availability across ${uniqueEquipment.length} machines with ${totalDowntime} minutes of total downtime. ${equipmentAnalysis[0]?.name} needs immediate attention with only ${equipmentAnalysis[0]?.availability.toFixed(1)}% availability.`;
 }
