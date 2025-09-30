@@ -75,18 +75,17 @@ function App() {
                   ].map((prompt, index) => (
                     <button
                       key={index}
-                      onClick={() => handleSendMessage(prompt)}
-                      className="p-3 text-left border border-gray-200 rounded-lg transition-colors group"
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = '#1955AE'
-                        e.currentTarget.style.backgroundColor = '#E8F2FF'
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        if (!isLoading) {
+                          handleSendMessage(prompt)
+                        }
                       }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = '#E5E7EB'
-                        e.currentTarget.style.backgroundColor = 'transparent'
-                      }}
+                      disabled={isLoading}
+                      className="p-3 text-left border border-gray-200 rounded-lg transition-all duration-200 hover:border-blue-600 hover:bg-blue-50 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <div className="text-sm font-medium text-gray-900 group-hover:text-blue-900">
+                      <div className="text-sm font-medium text-gray-900 hover:text-blue-900">
                         {prompt}
                       </div>
                     </button>
