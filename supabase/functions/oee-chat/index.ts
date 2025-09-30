@@ -72,7 +72,7 @@ Deno.serve(async (req: Request) => {
     // Check if user is requesting a chart
     const isChartRequest = detectChartRequest(message);
     
-    // Generate response with context
+    // Generate response with improved context logic
     const response = await generateResponseWithContext(message, conversationHistory || [], supabase, apiKey, isChartRequest);
     
     // Save assistant response
@@ -132,66 +132,133 @@ function detectChartRequest(message: string): boolean {
   return chartKeywords.some(keyword => lowerMessage.includes(keyword));
 }
 
-// Detect contextual follow-up questions
-function detectFollowUpQuestion(message: string, conversationHistory: any[]): { isFollowUp: boolean, context: string } {
-  const followUpKeywords = [
-    'what about', 'how about', 'and', 'also', 'tell me more', 'explain',
-    'why', 'how', 'when', 'where', 'which one', 'what else',
-    'more details', 'expand', 'specifically', 'elaborate',
-    'it', 'that', 'this', 'they', 'those', 'these'
+// Improved follow-up question detection with stricter criteria
+function detectFollowUpQuestion(message: string, conversationHistory: any[]): { isFollowUp: boolean, context: string, confidence: number } {
+  // If no conversation history, it's definitely not a follow-up
+  if (!conversationHistory || conversationHistory.length === 0) {
+    return { isFollowUp: false, context: '', confidence: 0 };
+  }
+
+  const lowerMessage = message.toLowerCase().trim();
+  
+  // Strong indicators this is NOT a follow-up (new topic)
+  const newTopicIndicators = [
+    'how many', 'how much', 'what is', 'what are', 'show me all', 'list',
+    'count', 'total', 'records', 'data', 'database', 'table',
+    'equipment list', 'machine list', 'status', 'overview',
+    'summary', 'report', 'analysis', 'breakdown'
   ];
   
-  const questionWords = ['what', 'why', 'how', 'when', 'where', 'which', 'who'];
-  const lowerMessage = message.toLowerCase();
+  // If message contains strong new topic indicators, it's not a follow-up
+  const hasNewTopicIndicator = newTopicIndicators.some(indicator => lowerMessage.includes(indicator));
+  if (hasNewTopicIndicator) {
+    return { isFollowUp: false, context: '', confidence: 0 };
+  }
+
+  // Strong follow-up indicators (but only if no new topic indicators)
+  const strongFollowUpWords = [
+    'how do i fix', 'how to fix', 'how can i improve', 'how to improve',
+    'when should', 'when to', 'why is', 'what about',
+    'tell me more', 'explain', 'elaborate', 'more details'
+  ];
   
-  // Check for follow-up indicators
-  const hasFollowUpKeyword = followUpKeywords.some(keyword => lowerMessage.includes(keyword));
-  const isShortQuestion = message.split(' ').length <= 5;
-  const startsWithQuestionWord = questionWords.some(word => lowerMessage.startsWith(word));
-  const hasPronouns = ['it', 'that', 'this', 'they', 'those', 'these'].some(pronoun => lowerMessage.includes(pronoun));
+  const weakFollowUpWords = [
+    'how', 'why', 'when', 'what', 'which', 'where'
+  ];
   
-  const isFollowUp = hasFollowUpKeyword || (isShortQuestion && (startsWithQuestionWord || hasPronouns));
+  const pronouns = ['it', 'that', 'this', 'they', 'those', 'these'];
   
-  // Get context from recent assistant messages
+  let confidence = 0;
+  
+  // Check for strong follow-up patterns
+  const hasStrongFollowUp = strongFollowUpWords.some(phrase => lowerMessage.includes(phrase));
+  if (hasStrongFollowUp) {
+    confidence += 0.8;
+  }
+  
+  // Check for pronouns (medium confidence)
+  const hasPronouns = pronouns.some(pronoun => lowerMessage.includes(pronoun));
+  if (hasPronouns) {
+    confidence += 0.5;
+  }
+  
+  // Check for short questions with weak follow-up words (low confidence)
+  const words = message.split(' ').filter(w => w.trim().length > 0);
+  const isShort = words.length <= 4;
+  const hasWeakFollowUp = weakFollowUpWords.some(word => lowerMessage.startsWith(word));
+  
+  if (isShort && hasWeakFollowUp) {
+    confidence += 0.3;
+  }
+  
+  // Additional context checks
   const recentAssistantMessages = conversationHistory
     .filter(msg => msg.role === 'assistant')
-    .slice(-2) // Last 2 assistant responses
+    .slice(-2)
     .map(msg => msg.content)
     .join(' ');
   
+  // Only consider it a follow-up if confidence is high enough
+  const isFollowUp = confidence >= 0.6;
+  
   return {
     isFollowUp,
-    context: recentAssistantMessages
+    context: recentAssistantMessages,
+    confidence
   };
 }
 
-// Determine the topic/subject from context and current message
-function determineTopicFromContext(message: string, conversationHistory: any[]): string {
-  const recentMessages = conversationHistory.slice(-4).map(msg => msg.content.toLowerCase()).join(' ');
-  const currentMessage = message.toLowerCase();
-  const combined = recentMessages + ' ' + currentMessage;
+// Determine the current topic from the message itself (not just context)
+function determineTopicFromMessage(message: string): string {
+  const lowerMessage = message.toLowerCase();
   
-  // Check for specific topics in order of priority
-  if (combined.includes('pareto') || combined.includes('cause') || combined.includes('reason') || combined.includes('failure')) {
+  // Check for specific topics in the current message first
+  if (lowerMessage.includes('pareto') || lowerMessage.includes('cause') || lowerMessage.includes('reason') || lowerMessage.includes('failure')) {
     return 'pareto';
   }
-  if (combined.includes('availability') || combined.includes('uptime')) {
+  if (lowerMessage.includes('availability') || lowerMessage.includes('uptime')) {
     return 'availability';
   }
-  if (combined.includes('downtime') || combined.includes('incident')) {
+  if (lowerMessage.includes('downtime') || lowerMessage.includes('incident')) {
     return 'downtime';
   }
-  if (combined.includes('equipment') || combined.includes('machine')) {
+  if (lowerMessage.includes('equipment') || lowerMessage.includes('machine')) {
     return 'equipment';
   }
-  if (combined.includes('performance') || combined.includes('efficiency')) {
+  if (lowerMessage.includes('performance') || lowerMessage.includes('efficiency')) {
+    return 'performance';
+  }
+  if (lowerMessage.includes('record') || lowerMessage.includes('data') || lowerMessage.includes('count') || lowerMessage.includes('how many')) {
+    return 'data_query';
+  }
+  
+  return 'general';
+}
+
+// Determine the topic from conversation context
+function determineTopicFromContext(conversationHistory: any[]): string {
+  const recentMessages = conversationHistory.slice(-4).map(msg => msg.content.toLowerCase()).join(' ');
+  
+  if (recentMessages.includes('pareto') || recentMessages.includes('cause') || recentMessages.includes('reason')) {
+    return 'pareto';
+  }
+  if (recentMessages.includes('availability') || recentMessages.includes('uptime')) {
+    return 'availability';
+  }
+  if (recentMessages.includes('downtime') || recentMessages.includes('incident')) {
+    return 'downtime';
+  }
+  if (recentMessages.includes('equipment') || recentMessages.includes('machine')) {
+    return 'equipment';
+  }
+  if (recentMessages.includes('performance') || recentMessages.includes('efficiency')) {
     return 'performance';
   }
   
   return 'general';
 }
 
-// Generate response with conversation context
+// Generate response with improved context logic
 async function generateResponseWithContext(
   message: string, 
   conversationHistory: any[], 
@@ -213,24 +280,93 @@ async function generateResponseWithContext(
     };
   }
   
-  // Check if this is a follow-up question
+  // Check if this is a follow-up question with improved detection
   const followUpInfo = detectFollowUpQuestion(message, conversationHistory);
-  const topic = determineTopicFromContext(message, conversationHistory);
   
-  console.log('Context info:', { 
+  // Determine topic from the current message first, then context
+  const messageTopic = determineTopicFromMessage(message);
+  const contextTopic = determineTopicFromContext(conversationHistory);
+  const finalTopic = messageTopic !== 'general' ? messageTopic : contextTopic;
+  
+  console.log('Improved context info:', { 
     isFollowUp: followUpInfo.isFollowUp, 
-    topic,
-    messageLength: message.length,
-    historyLength: conversationHistory.length 
+    confidence: followUpInfo.confidence,
+    messageTopic,
+    contextTopic,
+    finalTopic,
+    messageLength: message.length
   });
   
-  // Generate chart if requested or if continuing chart-related conversation
+  // Generate chart if requested or appropriate
   let chart: ChartData | undefined;
-  if (shouldGenerateChart || (followUpInfo.isFollowUp && topic !== 'general')) {
-    chart = await generateChart(message, equipmentData, topic);
+  if (shouldGenerateChart || (followUpInfo.isFollowUp && finalTopic !== 'general' && finalTopic !== 'data_query')) {
+    chart = await generateChart(message, equipmentData, finalTopic);
   }
   
-  // Quick analysis
+  // Handle data queries specifically
+  if (finalTopic === 'data_query') {
+    return handleDataQuery(message, equipmentData);
+  }
+  
+  // Quick analysis for other topics
+  const analysisData = await performQuickAnalysis(equipmentData);
+  
+  // Build contextual response
+  let responseText = '';
+  
+  // Handle follow-up questions with high confidence only
+  if (followUpInfo.isFollowUp && followUpInfo.confidence >= 0.7) {
+    responseText = handleFollowUpQuestion(message, contextTopic, analysisData);
+  } else {
+    // Handle as new question
+    responseText = handleNewQuestion(message, finalTopic, analysisData);
+  }
+  
+  // Add chart note if generated
+  if (chart) {
+    responseText += '\n\n**Chart**: Visual analysis displayed above.';
+  }
+  
+  return { text: responseText, chart };
+}
+
+// Handle data-specific queries
+function handleDataQuery(message: string, equipmentData: any[]): { text: string, chart?: ChartData } {
+  const lowerMessage = message.toLowerCase();
+  
+  if (lowerMessage.includes('how many record') || lowerMessage.includes('how much data')) {
+    const uniqueDates = [...new Set(equipmentData.map(log => log.date))];
+    const uniqueEquipment = [...new Set(equipmentData.map(log => log.equipment_name))];
+    
+    return {
+      text: `**Data Summary**\n\n**Total Records**: ${equipmentData.length}\n**Date Range**: ${uniqueDates.length} days\n**Equipment**: ${uniqueEquipment.length} machines\n\n**Latest Entries**:\n${uniqueDates.slice(0, 5).map(date => `• ${date}: ${equipmentData.filter(log => log.date === date).length} records`).join('\n')}`
+    };
+  }
+  
+  if (lowerMessage.includes('which date') || lowerMessage.includes('what date')) {
+    const dateCounts: { [key: string]: number } = {};
+    equipmentData.forEach(log => {
+      dateCounts[log.date] = (dateCounts[log.date] || 0) + 1;
+    });
+    
+    const sortedDates = Object.entries(dateCounts)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 10);
+    
+    return {
+      text: `**Data by Date**\n\n${sortedDates.map(([date, count]) => `• **${date}**: ${count} records`).join('\n')}\n\n**Date Range**: ${Math.min(...Object.keys(dateCounts).map(d => new Date(d).getTime()))} to ${Math.max(...Object.keys(dateCounts).map(d => new Date(d).getTime()))}`
+    };
+  }
+  
+  // Default data query response
+  const uniqueDates = [...new Set(equipmentData.map(log => log.date))];
+  return {
+    text: `**Data Overview**\n\n**Records**: ${equipmentData.length} total\n**Dates**: ${uniqueDates.length} days\n**Latest**: ${uniqueDates[0]}\n\n**Available Data**: Equipment status logs, downtime records, availability metrics`
+  };
+}
+
+// Perform quick analysis of equipment data
+async function performQuickAnalysis(equipmentData: any[]) {
   const uniqueEquipment = [...new Set(equipmentData.map((log: any) => log.equipment_name))];
   const downLogs = equipmentData.filter((log: any) => 
     log.status?.toLowerCase() === 'down' || log.status?.toLowerCase() === 'inactive'
@@ -261,51 +397,28 @@ async function generateResponseWithContext(
   const bestEquipment = equipmentAnalysis[equipmentAnalysis.length - 1];
   const performanceStatus = availability >= 85 ? 'Excellent' : availability >= 70 ? 'Good' : 'Poor';
   
-  // Build contextual response
-  let responseText = '';
-  
-  // Handle follow-up questions with context
-  if (followUpInfo.isFollowUp) {
-    responseText = handleFollowUpQuestion(message, topic, {
-      availability,
-      performanceStatus,
-      equipmentAnalysis,
-      worstEquipment,
-      bestEquipment,
-      totalDowntime,
-      downLogs,
-      uniqueEquipment
-    });
-  } else {
-    // Handle new questions
-    responseText = handleNewQuestion(message, topic, {
-      availability,
-      performanceStatus,
-      equipmentAnalysis,
-      worstEquipment,
-      bestEquipment,
-      totalDowntime,
-      downLogs,
-      uniqueEquipment
-    });
-  }
-  
-  // Add chart note if generated
-  if (chart) {
-    responseText += '\n\n**Chart**: Visual analysis displayed above.';
-  }
-  
-  return { text: responseText, chart };
+  return {
+    availability,
+    performanceStatus,
+    equipmentAnalysis,
+    worstEquipment,
+    bestEquipment,
+    totalDowntime,
+    totalRuntime,
+    downLogs,
+    runningLogs,
+    uniqueEquipment
+  };
 }
 
-// Handle follow-up questions with context
+// Handle follow-up questions (only called with high confidence)
 function handleFollowUpQuestion(message: string, topic: string, data: any): string {
   const lowerMessage = message.toLowerCase();
   
   // Contextual responses based on previous topic
   switch (topic) {
     case 'pareto':
-      if (lowerMessage.includes('how') || lowerMessage.includes('fix') || lowerMessage.includes('improve')) {
+      if (lowerMessage.includes('how') && (lowerMessage.includes('fix') || lowerMessage.includes('improve'))) {
         return `**Improvement Actions**\n\n**For Top Issue**:\n• Implement preventive maintenance schedule\n• Root cause analysis on recurring failures\n• Operator training programs\n\n**Target**: 50% reduction in failure frequency\n**Expected Impact**: +5-10% availability improvement`;
       }
       if (lowerMessage.includes('when') || lowerMessage.includes('time') || lowerMessage.includes('schedule')) {
@@ -324,7 +437,7 @@ function handleFollowUpQuestion(message: string, topic: string, data: any): stri
       
     case 'downtime':
       if (lowerMessage.includes('cost') || lowerMessage.includes('impact') || lowerMessage.includes('loss')) {
-        return `**Downtime Impact**\n\n**Total Lost Time**: ${data.totalDowntime} minutes\n**Production Impact**: ${((data.totalDowntime/(data.totalDowntime+data.equipmentAnalysis.reduce((sum: number, e: any) => sum + e.runtime, 0)))*100).toFixed(1)}% of total time\n\n**Worst Equipment**: ${data.worstEquipment.name} (${data.worstEquipment.downtime} min)\n**Recovery Priority**: Focus on frequent, short incidents`;
+        return `**Downtime Impact**\n\n**Total Lost Time**: ${data.totalDowntime} minutes\n**Production Impact**: ${((data.totalDowntime/(data.totalDowntime+data.totalRuntime))*100).toFixed(1)}% of total time\n\n**Worst Equipment**: ${data.worstEquipment.name} (${data.worstEquipment.downtime} min)\n**Recovery Priority**: Focus on frequent, short incidents`;
       }
       if (lowerMessage.includes('pattern') || lowerMessage.includes('trend') || lowerMessage.includes('when')) {
         return `**Downtime Patterns**\n\n**Total Incidents**: ${data.downLogs.length}\n**Average Duration**: ${Math.round(data.totalDowntime / data.downLogs.length)} minutes\n\n**Analysis Needed**: Time-based patterns\n**Recommendation**: Track incidents by shift, day, and week`;
@@ -366,7 +479,11 @@ function handleNewQuestion(message: string, topic: string, data: any): string {
   }
   // Downtime analysis
   else if (topic === 'downtime') {
-    return `**Downtime Analysis**\n\n**Total**: ${data.totalDowntime} minutes across ${data.downLogs.length} events\n**Worst Performer**: ${data.worstEquipment?.name} (${data.worstEquipment?.downtime} min downtime)\n\n**Impact**: ${((data.totalDowntime/(data.totalDowntime+data.equipmentAnalysis.reduce((sum: number, e: any) => sum + e.runtime, 0)))*100).toFixed(1)}% of total time\n**Status**: ${data.performanceStatus} performance level`;
+    return `**Downtime Analysis**\n\n**Total**: ${data.totalDowntime} minutes across ${data.downLogs.length} events\n**Worst Performer**: ${data.worstEquipment?.name} (${data.worstEquipment?.downtime} min downtime)\n\n**Impact**: ${((data.totalDowntime/(data.totalDowntime+data.totalRuntime))*100).toFixed(1)}% of total time\n**Status**: ${data.performanceStatus} performance level`;
+  }
+  // Equipment analysis
+  else if (topic === 'equipment') {
+    return `**Equipment Status**\n\n**Total Equipment**: ${data.uniqueEquipment.length}\n**Overall Performance**: ${data.performanceStatus}\n\n**Equipment List**:\n${data.equipmentAnalysis.slice(0, 5).map((e: any) => `• ${e.name}: ${e.availability.toFixed(1)}%`).join('\n')}\n\n**Action Required**: ${data.worstEquipment?.name} needs immediate attention`;
   }
   // General summary
   else {
