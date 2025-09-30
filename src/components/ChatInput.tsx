@@ -48,13 +48,7 @@ export function ChatInput({ onSendMessage, isLoading, onSuggestedPrompt }: ChatI
             {SUGGESTED_PROMPTS.map((prompt, index) => (
               <button
                 key={index}
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  if (!isLoading) {
-                    handleSuggestedPrompt(prompt)
-                  }
-                }}
+                onClick={() => handleSuggestedPrompt(prompt)}
                 disabled={isLoading}
                 className="block w-full text-left px-2 py-1 text-sm rounded transition-colors text-blue-800 hover:bg-blue-100 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -68,11 +62,7 @@ export function ChatInput({ onSendMessage, isLoading, onSuggestedPrompt }: ChatI
       <form onSubmit={handleSubmit} className="flex gap-2">
         <button
           type="button"
-          onClick={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            setShowSuggestions(!showSuggestions)
-          }}
+          onClick={() => setShowSuggestions(!showSuggestions)}
           className={`p-2 rounded-lg transition-all duration-200 active:scale-95 ${
             showSuggestions
               ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
