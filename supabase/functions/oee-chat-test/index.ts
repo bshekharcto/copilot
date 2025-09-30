@@ -152,7 +152,7 @@ async function generateAIResponse(message: string, supabase: any, apiKey: string
     .from('equipment_status_logs')
     .select('*')
     .order('created_at', { ascending: false })
-    .limit(50);
+    .limit(500);
     
   const equipmentSummary = equipmentData && equipmentData.length > 0 ? 
     `Recent Equipment Status (${equipmentData.length} records):\n${equipmentData.slice(0, 15).map((log: any) => 
