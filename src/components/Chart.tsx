@@ -10,7 +10,7 @@ import {
   Legend,
   ArcElement,
 } from 'chart.js'
-import { Bar, Line, Pie, Doughnut } from 'react-chartjs-2'
+import { Bar, Line, Pie, Doughnut, Chart as ChartComponent } from 'react-chartjs-2'
 
 ChartJS.register(
   CategoryScale,
@@ -84,7 +84,7 @@ export function Chart({ chartData, height = 400 }: ChartProps) {
 
     // Calculate cumulative percentages
     const total = sortedValues.reduce((sum, val) => sum + val, 0)
-    const cumulativePercentages = sortedValues.reduce((acc: number[], val, index) => {
+    const cumulativePercentages = sortedValues.reduce((acc: number[], _val, index) => {
       const cumSum = sortedValues.slice(0, index + 1).reduce((sum, v) => sum + v, 0)
       acc.push((cumSum / total) * 100)
       return acc
@@ -148,7 +148,7 @@ export function Chart({ chartData, height = 400 }: ChartProps) {
     return (
       <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
         <div style={{ height }}>
-          <Bar {...paretoChartProps} />
+          <ChartComponent type="bar" data={paretoChartProps.data} options={paretoChartProps.options} />
         </div>
       </div>
     )

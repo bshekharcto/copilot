@@ -21,7 +21,6 @@ interface EquipmentLog {
 }
 
 export function DataImport({ onClose, onImportComplete }: DataImportProps) {
-  const [isUploading, setIsUploading] = useState(false)
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle')
   const [previewData, setPreviewData] = useState<EquipmentLog[]>([])
   const [errorMessage, setErrorMessage] = useState('')
@@ -63,7 +62,6 @@ export function DataImport({ onClose, onImportComplete }: DataImportProps) {
       return
     }
 
-    setIsUploading(true)
     setUploadStatus('processing')
     setErrorMessage('')
 
@@ -72,7 +70,7 @@ export function DataImport({ onClose, onImportComplete }: DataImportProps) {
       const { headers, rows } = parseCSV(csvText)
 
       // Map to our expected format
-      const equipmentLogs: EquipmentLog[] = rows.map(row => {
+      const equipmentLogs = rows.map(row => {
         const log: any = {}
         headers.forEach((header, index) => {
           const normalizedHeader = header.toLowerCase().replace(/[^a-z0-9]/g, '_')
@@ -121,13 +119,15 @@ export function DataImport({ onClose, onImportComplete }: DataImportProps) {
           issue: log.issue || log.problem || log.description || log.fault_description || undefined,
           alert: log.alert || log.alarm || log.notification || log.alert_type || undefined,
           comment: log.comment || log.notes || undefined
-        }
-      }).filter(log => log !== null && log.equipment_name && log.status) // Filter out invalid rows
+        } as EquipmentLog
+      }).filter((log): log is EquipmentLog => log !== null) // Filter out invalid rows
 
-      setPreviewData(equipmentLogs.slice(0, 5)) // Show first 5 rows as preview
+      const validLogs: EquipmentLog[] = equipmentLogs.filter(log => log && log.equipment_name && log.status)
+
+      setPreviewData(validLogs.slice(0, 5)) // Show first 5 rows as preview
       setUploadStatus('success')
 
-      if (equipmentLogs.length === 0) {
+      if (validLogs.length === 0) {
         setErrorMessage('No valid equipment data found in the CSV file. Please check the format.')
         setUploadStatus('error')
         return
@@ -141,7 +141,7 @@ export function DataImport({ onClose, onImportComplete }: DataImportProps) {
       setErrorMessage(`Error processing CSV file: ${error instanceof Error ? error.message : 'Unknown error'}. Please check the file format.`)
       setUploadStatus('error')
     } finally {
-      setIsUploading(false)
+      // Processing complete
     }
   }
 

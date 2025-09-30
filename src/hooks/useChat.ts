@@ -171,7 +171,7 @@ export function useChat() {
 }
 
 // Generate AI responses using Edge Function
-async function generateLangChainResponse(userMessage: string, sessionId: string): Promise<string> {
+async function generateLangChainResponse(userMessage: string, sessionId: string): Promise<string | { text: string; chart?: any }> {
   console.log('🚀 Calling Edge Function with:', { userMessage, sessionId });
   console.log('🌐 Edge Function URL:', `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oee-chat`);
 
@@ -214,19 +214,23 @@ async function generateLangChainResponse(userMessage: string, sessionId: string)
       text: data.response,
       chart: data.chart
     };
-  } catch (error) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorName = error instanceof Error ? error.name : 'Error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
     console.error('❌ Error calling Edge Function:', error);
     console.error('❌ Error details:', {
-      name: error.name,
-      message: error.message,
-      stack: error.stack
+      name: errorName,
+      message: errorMessage,
+      stack: errorStack
     });
 
     // Fallback to basic response if Edge Function fails
     return {
       text: `🔧 **Debug Mode Active** - Edge Function Error Detected
 
-**Error Details**: ${error.message}
+**Error Details**: ${errorMessage}
 
 **Fallback Response**: I'm experiencing technical difficulties with the advanced AI system. The Edge Function at \`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oee-chat\` is not responding properly.
 
