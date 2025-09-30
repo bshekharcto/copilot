@@ -1,4 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { ChatOpenAI } from "npm:@langchain/openai@0.2.6";
+import { PromptTemplate } from "npm:langchain@0.2.16/prompts";
+import { RunnableSequence } from "npm:@langchain/core@0.2.28/runnables";
+import { StringOutputParser } from "npm:@langchain/core@0.2.28/output_parsers";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
 const corsHeaders = {
@@ -22,7 +26,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const { message, sessionId }: ChatRequest = await req.json();
-    console.log('Received chat request:', { message, sessionId });
+    console.log('🚀 Received chat request:', { message, sessionId });
 
     // Initialize Supabase client
     const supabase = createClient(
@@ -40,38 +44,143 @@ Deno.serve(async (req: Request) => {
       });
 
     if (userMsgError) {
-      console.error('Error saving user message:', userMsgError);
+      console.error('❌ Error saving user message:', userMsgError);
       throw new Error('Failed to save user message');
     }
+    console.log('✅ User message saved');
 
     // Get equipment data for context
     const { data: equipmentData, error: equipError } = await supabase
       .from('equipment_status_logs')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(50);
+      .limit(100);
 
     if (equipError) {
-      console.error('Error fetching equipment data:', equipError);
+      console.error('⚠️ Error fetching equipment data:', equipError);
     }
+    console.log(`📊 Retrieved ${equipmentData?.length || 0} equipment records`);
 
-    // Generate response based on equipment data
-    const response = await generateIntelligentResponse(message, equipmentData || []);
-    console.log('Generated response:', response.substring(0, 100) + '...');
+    // Get OEE data for additional context
+    const { data: oeeData, error: oeeError } = await supabase
+      .from('oee_data')
+      .select(`
+        *,
+        equipment:equipment_id(
+          name
+        )
+      `)
+      .order('timestamp', { ascending: false })
+      .limit(50);
+
+    if (oeeError) {
+      console.log('⚠️ No OEE data available:', oeeError.message);
+    }
+    console.log(`📈 Retrieved ${oeeData?.length || 0} OEE records`);
+
+    // Check if OpenAI API key is available
+    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+    if (!openaiApiKey) {
+      console.error('❌ OpenAI API key not found');
+      throw new Error('OpenAI API key not configured');
+    }
+    console.log('🔑 OpenAI API key found');
+
+    // Initialize OpenAI with LangChain
+    console.log('🤖 Initializing ChatOpenAI...');
+    const llm = new ChatOpenAI({
+      openAIApiKey: openaiApiKey,
+      modelName: "gpt-4o-mini",
+      temperature: 0.3,
+      maxTokens: 1000,
+    });
+
+    // Create equipment data summary for context
+    const equipmentSummary = equipmentData && equipmentData.length > 0 ? 
+      `Recent Equipment Status (last ${equipmentData.length} entries):\n${equipmentData.slice(0, 20).map((log: any) => 
+        `- ${log.equipment_name}: ${log.status} on ${log.date} (Duration: ${log.duration_minutes}min${log.reason ? `, Reason: ${log.reason}` : ''}${log.issue ? `, Issue: ${log.issue}` : ''})`
+      ).join('\n')}` : 'No equipment data available';
+
+    const oeeSummary = oeeData && oeeData.length > 0 ? 
+      `Recent OEE Data (last ${oeeData.length} entries):\n${oeeData.slice(0, 10).map((oee: any) => 
+        `- ${oee.equipment?.name || 'Unknown'}: OEE ${(oee.oee_score * 100).toFixed(1)}% (A: ${(oee.availability * 100).toFixed(1)}%, P: ${(oee.performance * 100).toFixed(1)}%, Q: ${(oee.quality * 100).toFixed(1)}%)`
+      ).join('\n')}` : 'No OEE data available';
+
+    console.log('📝 Equipment summary created:', equipmentSummary.substring(0, 200) + '...');
+
+    // Create comprehensive prompt template
+    const promptTemplate = PromptTemplate.fromTemplate(`
+You are an expert OEE (Overall Equipment Effectiveness) Manufacturing Copilot with deep expertise in:
+- Manufacturing operations and equipment management  
+- OEE calculations and optimization strategies
+- Predictive maintenance and downtime reduction
+- Production efficiency and quality improvement
+- Root cause analysis for manufacturing issues
+- Industry best practices and lean manufacturing
+- Data analysis and trend identification
+
+IMPORTANT: You have access to REAL manufacturing data from this facility. Use this data to provide specific, actionable insights.
+
+Current Manufacturing Context:
+{equipmentSummary}
+
+{oeeSummary}
+
+OEE Knowledge Base:
+- OEE = Availability × Performance × Quality  
+- World-class OEE benchmark: 85%+
+- Availability = (Operating Time / Planned Production Time) × 100
+- Performance = (Ideal Cycle Time × Total Count) / Operating Time × 100
+- Quality = (Good Count / Total Count) × 100
+
+User Question: {question}
+
+Provide a comprehensive, expert response that:
+1. Analyzes the current data context when relevant
+2. Offers specific recommendations based on manufacturing best practices
+3. Identifies trends, patterns, or areas for improvement
+4. Suggests concrete next steps or investigations  
+5. Uses professional manufacturing terminology
+6. Provides quantitative insights when possible
+7. References the actual data when making recommendations
+
+Format your response with clear sections using markdown headers and bullet points for readability.
+
+Response:
+`);
+
+    console.log('🔗 Creating LangChain sequence...');
+    // Create the LangChain sequence
+    const chain = RunnableSequence.from([
+      promptTemplate,
+      llm,
+      new StringOutputParser(),
+    ]);
+
+    console.log('🧠 Invoking LangChain with OpenAI...');
+    // Generate response using LangChain + OpenAI
+    const response = await chain.invoke({
+      question: message,
+      equipmentSummary,
+      oeeSummary,
+    });
+
+    console.log('✅ LangChain response generated:', response.substring(0, 150) + '...');
 
     // Save assistant response
     const { error: assistantMsgError } = await supabase
       .from('chat_messages')
       .insert({
         session_id: sessionId,
-        role: 'assistant',
+        role: 'assistant', 
         content: response,
       });
 
     if (assistantMsgError) {
-      console.error('Error saving assistant message:', assistantMsgError);
+      console.error('❌ Error saving assistant message:', assistantMsgError);
       throw new Error('Failed to save assistant message');
     }
+    console.log('✅ Assistant message saved');
 
     return new Response(
       JSON.stringify({ response }),
@@ -84,11 +193,26 @@ Deno.serve(async (req: Request) => {
     );
 
   } catch (error) {
-    console.error('Error in OEE Chat function:', error);
+    console.error('❌ Error in OEE Chat function:', error);
+    
+    // Try to provide a helpful error response
+    let errorResponse = 'I apologize, but I\'m experiencing technical difficulties.';
+    
+    if (error.message?.includes('OpenAI')) {
+      errorResponse = 'I\'m having trouble connecting to the AI service. The OpenAI integration may need configuration.';
+    } else if (error.message?.includes('API key')) {
+      errorResponse = 'The AI service is not properly configured. Please check the OpenAI API key setup.';
+    } else if (error.message?.includes('rate limit')) {
+      errorResponse = 'I\'m currently experiencing high demand. Please try again in a moment.';
+    } else if (error.message?.includes('network') || error.message?.includes('fetch')) {
+      errorResponse = 'I\'m having network connectivity issues. Please try again shortly.';
+    }
+    
     return new Response(
       JSON.stringify({ 
         error: 'Failed to process chat request',
-        details: error.message 
+        details: error.message,
+        response: `🔧 **Technical Issue Detected**\n\n${errorResponse}\n\n**Error Details**: ${error.message}\n\n**What I can still help with**:\n• Equipment status analysis\n• Basic OEE calculations\n• Downtime tracking\n• Performance monitoring\n\nPlease try again or contact support if the issue persists.`
       }),
       {
         status: 500,
@@ -100,212 +224,3 @@ Deno.serve(async (req: Request) => {
     );
   }
 });
-
-// Generate intelligent responses based on equipment data
-async function generateIntelligentResponse(userMessage: string, equipmentData: any[]): Promise<string> {
-  const message = userMessage.toLowerCase();
-  
-  // Basic analytics on equipment data
-  const uniqueEquipment = [...new Set(equipmentData.map(log => log.equipment_name))];
-  const totalLogs = equipmentData.length;
-  const downLogs = equipmentData.filter(log => log.status?.toLowerCase() === 'down');
-  const runningLogs = equipmentData.filter(log => log.status?.toLowerCase() === 'running');
-  
-  // Calculate metrics
-  const totalDowntime = downLogs.reduce((sum, log) => sum + (log.duration_minutes || 0), 0);
-  const totalRuntime = runningLogs.reduce((sum, log) => sum + (log.duration_minutes || 0), 0);
-  const availability = totalRuntime + totalDowntime > 0 ? (totalRuntime / (totalRuntime + totalDowntime) * 100) : 0;
-
-  if (message.includes('availability') || message.includes('uptime')) {
-    // Equipment availability analysis
-    const equipmentAvailability = uniqueEquipment.map(equipment => {
-      const equipLogs = equipmentData.filter(log => log.equipment_name === equipment);
-      const equipDowntime = equipLogs.filter(log => log.status?.toLowerCase() === 'down')
-        .reduce((sum, log) => sum + (log.duration_minutes || 0), 0);
-      const equipRuntime = equipLogs.filter(log => log.status?.toLowerCase() === 'running')
-        .reduce((sum, log) => sum + (log.duration_minutes || 0), 0);
-      const equipAvailability = equipRuntime + equipDowntime > 0 ? (equipRuntime / (equipRuntime + equipDowntime) * 100) : 0;
-
-      return { equipment, availability: equipAvailability, downtime: equipDowntime, runtime: equipRuntime };
-    }).sort((a, b) => b.availability - a.availability);
-
-    return `# Equipment Availability Analysis
-
-**Overall System Availability: ${availability.toFixed(1)}%**
-
-## Equipment Performance Rankings:
-
-${equipmentAvailability.map((item, index) => 
-  `${index + 1}. **${item.equipment}**: ${item.availability.toFixed(1)}% availability\n   - Runtime: ${item.runtime} minutes\n   - Downtime: ${item.downtime} minutes`
-).join('\n\n')}
-
-## Key Insights:
-
-• **Best Performer**: ${equipmentAvailability[0]?.equipment || 'N/A'} at ${equipmentAvailability[0]?.availability.toFixed(1) || '0'}% availability
-• **Needs Attention**: ${equipmentAvailability[equipmentAvailability.length - 1]?.equipment || 'N/A'} at ${equipmentAvailability[equipmentAvailability.length - 1]?.availability.toFixed(1) || '0'}% availability
-• **Total Equipment**: ${uniqueEquipment.length} machines monitored
-• **Data Points**: ${totalLogs} status records analyzed
-
-## Recommendations:
-
-1. **Focus on improving** ${equipmentAvailability[equipmentAvailability.length - 1]?.equipment || 'lower-performing equipment'}
-2. **Study best practices** from ${equipmentAvailability[0]?.equipment || 'top-performing equipment'}
-3. **Target 85%+ availability** for world-class OEE performance
-
-Would you like more detailed analysis on any specific equipment?`;
-  }
-
-  if (message.includes('downtime') || message.includes('issues') || message.includes('problems')) {
-    // Downtime analysis
-    const downtimeByReason = downLogs.reduce((acc, log) => {
-      const reason = log.reason || 'Unknown';
-      acc[reason] = (acc[reason] || 0) + (log.duration_minutes || 0);
-      return acc;
-    }, {} as Record<string, number>);
-
-    const sortedDowntime = Object.entries(downtimeByReason)
-      .sort(([,a], [,b]) => b - a)
-      .slice(0, 5);
-
-    const recentIssues = downLogs
-      .filter(log => log.issue)
-      .slice(0, 5)
-      .map(log => `• **${log.equipment_name}**: ${log.issue} (${log.date})`);
-
-    return `# Downtime Analysis Report
-
-**Total Downtime: ${totalDowntime} minutes across ${downLogs.length} incidents**
-
-## Top Downtime Causes:
-
-${sortedDowntime.map(([reason, minutes], index) => 
-  `${index + 1}. **${reason}**: ${minutes} minutes (${((minutes / totalDowntime) * 100).toFixed(1)}%)`
-).join('\n')}
-
-## Recent Critical Issues:
-
-${recentIssues.length > 0 ? recentIssues.join('\n') : '• No specific issues recorded in recent data'}
-
-## Equipment-Specific Downtime:
-
-${uniqueEquipment.map(equipment => {
-  const equipDownLogs = downLogs.filter(log => log.equipment_name === equipment);
-  const equipDowntime = equipDownLogs.reduce((sum, log) => sum + (log.duration_minutes || 0), 0);
-  return `• **${equipment}**: ${equipDowntime} minutes (${equipDownLogs.length} incidents)`;
-}).join('\n')}
-
-## Impact Analysis:
-
-• **Average downtime per incident**: ${downLogs.length > 0 ? (totalDowntime / downLogs.length).toFixed(1) : 0} minutes
-• **Most problematic equipment**: ${downLogs.reduce((acc, log) => {
-    acc[log.equipment_name] = (acc[log.equipment_name] || 0) + (log.duration_minutes || 0);
-    return acc;
-  }, {} as Record<string, number>)}
-
-## Recommendations:
-
-1. **Priority Focus**: Address "${sortedDowntime[0]?.[0] || 'main causes'}" first
-2. **Preventive Maintenance**: Schedule for high-downtime equipment
-3. **Root Cause Analysis**: Investigate recurring issues
-
-Would you like detailed incident reports for specific equipment?`;
-  }
-
-  if (message.includes('oee') || message.includes('overall equipment effectiveness') || message.includes('performance')) {
-    // OEE overview
-    const alerts = [...new Set(downLogs.filter(log => log.alert).map(log => log.alert))];
-    const avgRunDuration = runningLogs.length > 0 ? (totalRuntime / runningLogs.length) : 0;
-
-    return `# OEE Performance Dashboard
-
-**Current OEE Components Analysis:**
-
-## Availability: ${availability.toFixed(1)}%
-• **Target**: 90%+ (World-class benchmark)
-• **Current Status**: ${availability >= 90 ? '✅ Excellent' : availability >= 80 ? '⚠️ Good' : '🔴 Needs Improvement'}
-• **Uptime**: ${totalRuntime} minutes
-• **Downtime**: ${totalDowntime} minutes
-
-## Equipment Overview:
-• **Machines Monitored**: ${uniqueEquipment.length}
-• **Active Equipment**: ${uniqueEquipment.join(', ')}
-• **Operational Records**: ${totalLogs} status logs
-• **Running Sessions**: ${runningLogs.length} periods
-• **Downtime Events**: ${downLogs.length} incidents
-
-## Performance Indicators:
-• **Average Run Duration**: ${avgRunDuration.toFixed(1)} minutes
-• **System Utilization**: ${((runningLogs.length / totalLogs) * 100).toFixed(1)}%
-• **Alert Types Active**: ${alerts.length}
-
-## Current Alerts:
-${alerts.length > 0 ? alerts.map(alert => `• ${alert}`).join('\n') : '• No active alerts detected'}
-
-## Key Recommendations:
-
-### Immediate Actions:
-1. **Availability Focus**: Current ${availability.toFixed(1)}% vs 90% target
-2. **Monitor Critical Equipment**: Address frequent downtimes
-3. **Preventive Maintenance**: Based on alert patterns
-
-### Performance Optimization:
-1. **Extend Run Cycles**: Current average ${avgRunDuration.toFixed(1)} minutes
-2. **Reduce Setup Times**: Minimize changeover periods
-3. **Quality Improvements**: Focus on first-pass yield
-
-## Industry Benchmarks:
-• **World-Class OEE**: 85%+
-• **Availability Target**: 90%
-• **Performance Target**: 95%
-• **Quality Target**: 99%
-
-**Next Steps**: Would you like specific analysis for any equipment or time period?`;
-  }
-
-  // Default comprehensive response
-  return `# OEE Manufacturing Copilot
-
-**Real-time Equipment Analysis Ready**
-
-## Current System Status:
-• **Equipment Monitored**: ${uniqueEquipment.length} machines (${uniqueEquipment.join(', ')})
-• **Data Points**: ${totalLogs} operational records
-• **System Availability**: ${availability.toFixed(1)}%
-• **Active Monitoring**: Real-time status tracking
-
-## Recent Activity Summary:
-• **Running Time**: ${totalRuntime} minutes (${runningLogs.length} sessions)
-• **Downtime**: ${totalDowntime} minutes (${downLogs.length} incidents)
-• **Latest Update**: ${equipmentData[0]?.equipment_name || 'No data'} - ${equipmentData[0]?.status || 'Unknown'}
-
-## What I Can Analyze:
-
-### 📊 **Availability Analysis**
-• Equipment uptime and downtime patterns
-• Availability rankings and comparisons
-• Bottleneck identification
-
-### 🔧 **Downtime & Issues**
-• Root cause analysis of failures
-• Maintenance requirement predictions
-• Issue tracking and resolution
-
-### 📈 **Performance Optimization**
-• OEE calculations and benchmarking
-• Efficiency improvement recommendations
-• Production optimization strategies
-
-### 🚨 **Alert Monitoring**
-• Critical alert analysis
-• Predictive maintenance alerts
-• Safety and quality notifications
-
-## Quick Start Questions:
-• \"Show me availability analysis for all equipment\"
-• \"What are the main causes of downtime?\"
-• \"Which equipment needs immediate attention?\"
-• \"Calculate our current OEE performance\"
-• \"Analyze recent alerts and issues\"
-
-**How can I help optimize your manufacturing operations today?**`;
-}

@@ -149,6 +149,11 @@ async function generateLangChainResponse(userMessage: string, sessionId: string)
     console.log('✅ Response data received:', data);
 
     if (data.error) {
+      console.warn('⚠️ Edge Function returned error, but has response:', data.response);
+      // If there's both an error and a response, use the response (it might be a graceful error handling)
+      if (data.response) {
+        return data.response;
+      }
       throw new Error(data.error);
     }
 
