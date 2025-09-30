@@ -45,41 +45,19 @@ Deno.serve(async (req: Request) => {
     }
     console.log('✅ User message saved');
 
-    // Try multiple possible OpenAI key environment variables
-    const possibleKeys = [
-      'OPENAI_API_KEY',
-      'OPENAI_KEY', 
-      'API_KEY',
-      'OPEN_AI_KEY',
-      'OPENAI_SECRET_KEY'
-    ];
+    // Check for OpenAI API key (only one standard variable)
+    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
     
-    let openaiApiKey = null;
-    let keySource = null;
-    
-    for (const keyName of possibleKeys) {
-      const key = Deno.env.get(keyName);
-      if (key && key.startsWith('sk-')) {
-        openaiApiKey = key;
-        keySource = keyName;
-        break;
-      }
-    }
-    
-    const keyStatus = {
-      found: !!openaiApiKey,
-      source: keySource,
+    console.log('🔑 OpenAI API key status:', {
+      exists: !!openaiApiKey,
       length: openaiApiKey ? openaiApiKey.length : 0,
-      prefix: openaiApiKey ? openaiApiKey.substring(0, 7) + '...' : 'NOT_FOUND',
-      checked_vars: possibleKeys
-    };
+      isValid: openaiApiKey ? openaiApiKey.startsWith('sk-') : false
+    });
     
-    console.log('🔑 OpenAI key search result:', keyStatus);
-    
-    // If we found a valid OpenAI key, try to use LangChain
-    if (openaiApiKey) {
+    // If we have a valid OpenAI key, use LangChain
+    if (openaiApiKey && openaiApiKey.startsWith('sk-')) {
       try {
-        console.log('🤖 Attempting LangChain with OpenAI...');
+        console.log('🤖 Using LangChain with OpenAI...');
         const response = await generateAIResponse(message, supabase, openaiApiKey);
         
         // Save assistant response
@@ -96,10 +74,7 @@ Deno.serve(async (req: Request) => {
         return new Response(
           JSON.stringify({ 
             response,
-            debug: { 
-              mode: 'langchain_success',
-              keyStatus: { found: true, source: keySource }
-            }
+            debug: { mode: 'ai_powered' }
           }),
           {
             headers: {
@@ -116,8 +91,8 @@ Deno.serve(async (req: Request) => {
     }
     
     // Fallback: Generate intelligent response without AI
-    console.log('📊 Generating intelligent fallback response...');
-    const response = await generateIntelligentFallback(message, supabase, keyStatus);
+    console.log('📊 Using intelligent fallback...');
+    const response = await generateIntelligentFallback(message, supabase, !!openaiApiKey);
     
     // Save assistant response
     await supabase
@@ -131,10 +106,7 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({ 
         response,
-        debug: { 
-          mode: 'intelligent_fallback',
-          keyStatus 
-        }
+        debug: { mode: 'analytics_fallback' }
       }),
       {
         headers: {
@@ -229,7 +201,7 @@ Response:
 }
 
 // Generate intelligent response without AI
-async function generateIntelligentFallback(message: string, supabase: any, keyStatus: any): Promise<string> {
+async function generateIntelligentFallback(message: string, supabase: any, keyExists: boolean): Promise<string> {
   const userMessage = message.toLowerCase();
   
   // Get equipment data
@@ -242,17 +214,16 @@ async function generateIntelligentFallback(message: string, supabase: any, keySt
   if (!equipmentData || equipmentData.length === 0) {
     return `📊 **OEE Manufacturing Copilot**
 
-⚠️ **Status**: OpenAI Integration Required
+⚠️ **Status**: ${keyExists ? 'OpenAI key found but not working' : 'OpenAI API key not configured'}
 
 **Current Situation:**
-• OpenAI API key not found in environment variables
-• Checked variables: ${keyStatus.checked_vars.join(', ')}
+• ${keyExists ? 'OpenAI integration encountering issues' : 'OPENAI_API_KEY environment variable not set'}
 • No equipment data available for analysis
 
 **To Enable Full AI Capabilities:**
-1. **Configure OpenAI API Key** in Supabase Edge Function environment
+1. **Configure OPENAI_API_KEY** in Supabase Edge Function environment
 2. **Import Equipment Data** using the Data Import tab
-3. **Restart the chat** to access AI-powered insights
+3. **Test the chat** to verify AI integration
 
 **What I can provide without AI:**
 • Basic equipment data analysis
@@ -261,9 +232,9 @@ async function generateIntelligentFallback(message: string, supabase: any, keySt
 • Industry benchmarks
 
 **Next Steps:**
-1. Please contact your system administrator to configure the OpenAI API key
+1. Set the OPENAI_API_KEY environment variable with your OpenAI API key
 2. Upload your manufacturing data via the Data Import feature
-3. Once configured, I'll provide advanced predictive insights and recommendations`;
+3. Once configured, I'll provide advanced AI-powered insights`;
   }
   
   // Basic analytics
@@ -277,7 +248,7 @@ async function generateIntelligentFallback(message: string, supabase: any, keySt
   if (userMessage.includes('availability') || userMessage.includes('uptime')) {
     return `📈 **Equipment Availability Analysis**
 
-⚠️ **Mode**: Data Analytics (AI Enhancement Available with OpenAI Integration)
+⚠️ **Mode**: Data Analytics ${keyExists ? '(AI integration issues)' : '(OpenAI key needed)'}
 
 ## Current System Performance:
 • **Overall Availability**: ${availability.toFixed(1)}% ${availability >= 90 ? '✅ Excellent' : availability >= 80 ? '⚠️ Good' : '🔴 Needs Improvement'}
@@ -301,13 +272,13 @@ ${uniqueEquipment.map(equipment => {
 • **World-class OEE**: 85%+ (requires 90%+ availability)
 • **Your Current Level**: ${availability >= 90 ? 'World-class' : availability >= 80 ? 'Above Average' : 'Improvement Needed'}
 
-🎆 **Upgrade to AI-Powered Analysis**: Configure OpenAI integration for predictive insights, root cause analysis, and personalized optimization recommendations.`;
+🎆 **Enable AI Features**: Set OPENAI_API_KEY environment variable for predictive insights and advanced recommendations.`;
   }
   
   return `📊 **OEE Manufacturing Copilot** 
 
 ⚠️ **Current Mode**: Advanced Data Analytics
-🎆 **AI Enhancement**: Available with OpenAI API Integration
+🎆 **AI Enhancement**: ${keyExists ? 'Key found but integration issues' : 'Requires OPENAI_API_KEY configuration'}
 
 ## Your Manufacturing System:
 • **Equipment Monitored**: ${uniqueEquipment.length} machines (${uniqueEquipment.join(', ')})
@@ -327,13 +298,13 @@ ${uniqueEquipment.map(equipment => {
 • "Which equipment needs attention?"
 • "Analyze downtime patterns"
 
-## 🎆 Unlock Full AI Capabilities:
-**Configure OpenAI API Key** to enable:
+## 🎆 Enable Full AI Capabilities:
+**Set OPENAI_API_KEY environment variable** to unlock:
 • Predictive maintenance recommendations
 • Advanced root cause analysis
 • Personalized optimization strategies
 • Natural language insights
 • Automated problem diagnosis
 
-**Configuration Status**: ${keyStatus.found ? '✅ Found' : '❌ Not Found'} (Checked: ${keyStatus.checked_vars.join(', ')})`;
+**Configuration Required**: OPENAI_API_KEY environment variable in Supabase Edge Function`;
 }
