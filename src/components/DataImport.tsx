@@ -9,12 +9,15 @@ interface DataImportProps {
 
 interface EquipmentLog {
   equipment_name: string
-  timestamp: string
   status: string
-  reason?: string
+  date: string
+  start_time?: string
+  end_time?: string
   duration_minutes?: number
+  reason?: string
   issue?: string
   alert?: string
+  comment?: string
 }
 
 export function DataImport({ onClose, onImportComplete }: DataImportProps) {
@@ -76,14 +79,23 @@ export function DataImport({ onClose, onImportComplete }: DataImportProps) {
           log[normalizedHeader] = row[index]
         })
 
+        // Parse timestamp into date and time components
+        const timestampStr = log.timestamp || log.time || log.date || log.datetime || new Date().toISOString()
+        const timestamp = new Date(timestampStr)
+        const dateStr = timestamp.toISOString().split('T')[0] // YYYY-MM-DD
+        const timeStr = timestamp.toTimeString().split(' ')[0] // HH:MM:SS
+
         return {
           equipment_name: log.equipment_name || log.equipment || log.machine || log.machine_name || log.equipment_id || `Equipment_${Math.random().toString(36).substr(2, 9)}`,
-          timestamp: log.timestamp || log.time || log.date || log.datetime || new Date().toISOString(),
           status: log.status || log.state || log.status_code || 'unknown',
-          reason: log.reason || log.cause || log.downtime_reason || undefined,
+          date: log.date || dateStr,
+          start_time: log.start_time || timeStr,
+          end_time: log.end_time || undefined,
           duration_minutes: parseInt(log.duration_minutes || log.duration || log.downtime_duration || '0') || 0,
+          reason: log.reason || log.cause || log.downtime_reason || undefined,
           issue: log.issue || log.problem || log.description || log.fault_description || undefined,
-          alert: log.alert || log.alarm || log.notification || log.alert_type || undefined
+          alert: log.alert || log.alarm || log.notification || log.alert_type || undefined,
+          comment: log.comment || log.notes || undefined
         }
       }).filter(log => log.equipment_name && log.status) // Filter out invalid rows
 
@@ -161,20 +173,22 @@ export function DataImport({ onClose, onImportComplete }: DataImportProps) {
         <ul className="list-disc list-inside ml-2 space-y-1">
           <li><code>equipment_name</code>, <code>equipment</code>, <code>machine</code>, <code>machine_name</code>, or <code>equipment_id</code></li>
           <li><code>status</code>, <code>state</code>, or <code>status_code</code> (e.g., "running", "down", "maintenance")</li>
-          <li><code>timestamp</code>, <code>time</code>, <code>date</code>, or <code>datetime</code></li>
+          <li><code>date</code> (YYYY-MM-DD format) or <code>timestamp</code>, <code>time</code>, <code>datetime</code></li>
         </ul>
         <p><strong>Optional columns:</strong></p>
         <ul className="list-disc list-inside ml-2 space-y-1">
+          <li><code>start_time</code>, <code>end_time</code> (HH:MM:SS format)</li>
           <li><code>duration_minutes</code>, <code>duration</code>, or <code>downtime_duration</code></li>
           <li><code>reason</code>, <code>cause</code>, or <code>downtime_reason</code></li>
           <li><code>issue</code>, <code>problem</code>, <code>description</code>, or <code>fault_description</code></li>
           <li><code>alert</code>, <code>alarm</code>, <code>notification</code>, or <code>alert_type</code></li>
+          <li><code>comment</code>, <code>notes</code></li>
         </ul>
         <p className="mt-2"><strong>Example CSV:</strong></p>
         <div className="bg-white p-2 rounded border text-xs font-mono">
-          equipment_name,status,timestamp,duration_minutes,reason<br/>
-          Machine A,running,2024-01-01 08:00,120,<br/>
-          Machine A,down,2024-01-01 10:00,30,maintenance
+          equipment_name,status,date,start_time,duration_minutes,reason<br/>
+          Machine A,running,2024-01-01,08:00:00,120,<br/>
+          Machine A,down,2024-01-01,10:00:00,30,maintenance
         </div>
       </div>
     </div>
@@ -240,8 +254,9 @@ export function DataImport({ onClose, onImportComplete }: DataImportProps) {
                         <tr className="border-b border-green-200">
                           <th className="text-left p-2">Equipment</th>
                           <th className="text-left p-2">Status</th>
+                          <th className="text-left p-2">Date</th>
+                          <th className="text-left p-2">Time</th>
                           <th className="text-left p-2">Duration</th>
-                          <th className="text-left p-2">Reason</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -249,8 +264,9 @@ export function DataImport({ onClose, onImportComplete }: DataImportProps) {
                           <tr key={index} className="border-b border-green-100">
                             <td className="p-2">{log.equipment_name}</td>
                             <td className="p-2">{log.status}</td>
+                            <td className="p-2">{log.date}</td>
+                            <td className="p-2">{log.start_time || '-'}</td>
                             <td className="p-2">{log.duration_minutes || 0} min</td>
-                            <td className="p-2">{log.reason || '-'}</td>
                           </tr>
                         ))}
                       </tbody>
