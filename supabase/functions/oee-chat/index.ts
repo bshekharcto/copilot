@@ -116,14 +116,16 @@ async function generateResponse(
   shouldGenerateChart: boolean = false
 ): Promise<{text: string, chart?: ChartData}> {
 
-  // Fetch ALL equipment data - no limits
-  const { data: equipmentData, error: dataError } = await supabase
+  // Fetch ALL equipment data - using range to get unlimited records
+  const { data: equipmentData, error: dataError, count } = await supabase
     .from('equipment_status_logs')
-    .select('*')
-    .order('created_at', { ascending: false });
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false})
+    .range(0, 10000); // Fetch up to 10000 records
 
   console.log('Data fetch result:', {
     recordCount: equipmentData?.length || 0,
+    totalCount: count,
     hasError: !!dataError,
     error: dataError
   });
