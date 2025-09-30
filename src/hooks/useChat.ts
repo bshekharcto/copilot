@@ -6,6 +6,7 @@ export function useChat() {
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [openaiApiKey, setOpenaiApiKey] = useState<string | null>(null)
 
   useEffect(() => {
     loadSessions()
@@ -87,7 +88,7 @@ export function useChat() {
     try {
       // Generate AI response using LangChain Edge Function
       // The Edge Function will save both user and assistant messages
-      const aiResponse = await generateLangChainResponse(content, currentSession!.id)
+      const aiResponse = await generateLangChainResponse(content, currentSession!.id, openaiApiKey)
 
       // Reload messages to get the latest ones from the Edge Function
       await loadMessages(currentSession!.id)
@@ -123,17 +124,18 @@ export function useChat() {
     sendMessage,
     selectSession,
     startNewChat,
-    loadSessions
+    loadSessions,
+    setOpenaiApiKey
   }
 }
 
 // Generate AI responses using LangChain Edge Function
-async function generateLangChainResponse(userMessage: string, sessionId: string): Promise<string> {
+async function generateLangChainResponse(userMessage: string, sessionId: string, openaiApiKey?: string | null): Promise<string> {
   console.log('🚀 Calling Edge Function with:', { userMessage, sessionId });
   console.log('🌐 Edge Function URL:', `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oee-chat`);
 
   try {
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oee-chat`, {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oee-chat-test`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -141,7 +143,8 @@ async function generateLangChainResponse(userMessage: string, sessionId: string)
       },
       body: JSON.stringify({
         message: userMessage,
-        sessionId: sessionId
+        sessionId: sessionId,
+        ...(openaiApiKey && { openaiApiKey })
       })
     });
 

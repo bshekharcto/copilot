@@ -3,10 +3,13 @@ import { Sidebar } from './components/Sidebar'
 import { ChatMessage } from './components/ChatMessage'
 import { ChatInput } from './components/ChatInput'
 import { DataImport } from './components/DataImport'
+import { OpenAIKeyInput } from './components/OpenAIKeyInput'
 import { useChat } from './hooks/useChat'
 
 function App() {
   const [showDataImport, setShowDataImport] = useState(false)
+  const [showOpenAIKeyInput, setShowOpenAIKeyInput] = useState(false)
+  const [currentApiKey, setCurrentApiKey] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const {
     sessions,
@@ -16,7 +19,8 @@ function App() {
     sendMessage,
     selectSession,
     startNewChat,
-    loadSessions
+    loadSessions,
+    setOpenaiApiKey
   } = useChat()
 
   const scrollToBottom = () => {
@@ -51,6 +55,12 @@ function App() {
   const handleImportComplete = () => {
     setShowDataImport(false)
     // Optionally refresh any data or show a success message
+  }
+
+  const handleOpenAIKeySet = (key: string) => {
+    setCurrentApiKey(key)
+    setOpenaiApiKey(key)
+    setShowOpenAIKeyInput(false)
   }
 
   return (
@@ -107,9 +117,29 @@ function App() {
                   ))}
                 </div>
 
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-gray-500 mb-4">
                   Or ask me anything about your equipment performance, alerts, or operational insights.
                 </div>
+
+                {!currentApiKey && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                        <span className="text-blue-600">🤖</span>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-medium text-blue-900">Enable AI-Powered Insights</h4>
+                        <p className="text-xs text-blue-700">Unlock advanced analytics and recommendations</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowOpenAIKeyInput(true)}
+                      className="w-full px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Configure OpenAI API Key
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -151,6 +181,13 @@ function App() {
         <DataImport
           onClose={() => setShowDataImport(false)}
           onImportComplete={handleImportComplete}
+        />
+      )}
+
+      {showOpenAIKeyInput && (
+        <OpenAIKeyInput
+          onKeySet={handleOpenAIKeySet}
+          onClose={() => setShowOpenAIKeyInput(false)}
         />
       )}
     </div>
