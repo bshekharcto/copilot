@@ -123,11 +123,13 @@ async function generateResponse(
     .order('created_at', { ascending: false})
     .range(0, 10000); // Fetch up to 10000 records
 
-  console.log('Data fetch result:', {
+  console.log('Data fetch result [v4-with-range]:', {
     recordCount: equipmentData?.length || 0,
     totalCount: count,
     hasError: !!dataError,
-    error: dataError
+    error: dataError,
+    query: 'Using .range(0, 10000)',
+    deployedAt: new Date().toISOString()
   });
 
   if (dataError) {
@@ -271,7 +273,7 @@ function handleDataQuery(message: string, equipmentData: any[]): { text: string 
   }
 
   return {
-    text: `**Data Overview**\\n\\n**Total Records**: ${analysis.totalRecords}\\n**Equipment**: ${analysis.uniqueEquipment.join(', ')}\\n**Date Range**: ${analysis.uniqueDates.length} days\\n**Latest Date**: ${analysis.uniqueDates[analysis.uniqueDates.length - 1]}`
+    text: `**Data Overview**\\n\\n**Total Records**: ${analysis.totalRecords}\\n**Equipment**: ${analysis.uniqueEquipment.join(', ')}\\n**Date Range**: ${analysis.uniqueDates.length} days\\n**Latest Date**: ${analysis.uniqueDates[analysis.uniqueDates.length - 1]}\\n\\n_Function Version: v4 with range(0,10000)_`
   };
 }
 
